@@ -4,6 +4,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from caseward.ai.provider import ModelProvider
 from caseward.pages import OcrEngine
 from caseward.scanning import Scanner
 from caseward.storage import LocalStorage, S3Storage, Storage
@@ -14,6 +15,7 @@ class Services:
     storage: Storage
     scanner: Scanner | None = None
     ocr: OcrEngine | None = None
+    ai: ModelProvider | None = None
 
 
 def storage_from_env() -> Storage:
@@ -24,6 +26,20 @@ def storage_from_env() -> Storage:
                      os.environ.get("CASEWARD_S3_KMS_KEY_ID"))
 
 
+def ai_from_env() -> ModelProvider | None:
+    """None unless an AI provider is fully configured, including its residency
+    approval. Without one, extraction jobs wait in the queue."""
+    from caseward.ai.provider import ResidencyApproval, grok
+    if "CASEWARD_AI_API_KEY" not in os.environ:
+        return None
+    approval = ResidencyApproval(
+        reference=os.environ.get("CASEWARD_AI_RESIDENCY_APPROVAL", ""),
+        allowed_hosts=frozenset(h.strip() for h in os.environ.get("CASEWARD_AI_ALLOWED_HOSTS", "").split(",") if h.strip()),
+    )
+    return grok(os.environ["CASEWARD_AI_API_KEY"], os.environ["CASEWARD_AI_MODEL"], approval,
+                base_url=os.environ["CASEWARD_AI_BASE_URL"])
+
+
 def worker_services_from_env() -> Services:
     from caseward.pages import TesseractOcr
     from caseward.scanning import ClamdScanner
@@ -31,4 +47,5 @@ def worker_services_from_env() -> Services:
         storage=storage_from_env(),
         scanner=ClamdScanner(os.environ["CASEWARD_CLAMD_HOST"], int(os.environ.get("CASEWARD_CLAMD_PORT", "3310"))),
         ocr=TesseractOcr(os.environ.get("CASEWARD_OCR_LANG", "eng")),
+        ai=ai_from_env(),
     )

@@ -103,9 +103,11 @@ approve a letter). Row-level security is the backstop.
    Infected or altered files stop here.
 3. `ocr` renders page images for the viewer and reads the text (from the
    text layer, or by OCR for scans).
-4. `extract` (AI extraction, next to build) produces a draft. A case handler
-   reviews it side by side with the page images, and only the approved
-   result becomes inspections and defects.
+4. `extract` sends the text to the approved AI provider with a versioned
+   prompt and schema, runs our own checks, and queues a review task (decision
+   0008). A case handler reviews it side by side with the page images. Only
+   the approved or corrected result becomes an inspection and defects, which
+   then queue their deadline calculation.
 
 Progress is shown as `processing`: scanning, reading, awaiting_review,
 complete, rejected or failed (decision 0007).

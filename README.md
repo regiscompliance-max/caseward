@@ -60,6 +60,17 @@ export CASEWARD_CLAMD_HOST=clamd    # ClamAV daemon
 # and the tesseract binary with English data installed in the image
 ```
 
+AI extraction stays off until a provider is configured **with its UK
+residency approval** (decision 0008):
+
+```sh
+export CASEWARD_AI_API_KEY=... CASEWARD_AI_MODEL=... CASEWARD_AI_BASE_URL=https://<approved-endpoint>/v1
+export CASEWARD_AI_ALLOWED_HOSTS=<approved-endpoint> CASEWARD_AI_RESIDENCY_APPROVAL="<signed agreement reference>"
+```
+
+Score a prompt or model change against the labelled set before it ships:
+`python -m caseward.ai.evaluate path/to/labelled-set`.
+
 The APIs need the same `CASEWARD_S3_*` settings to issue upload and download
 links. For local development, use `CASEWARD_STORAGE_BACKEND=local` and
 `CASEWARD_LOCAL_STORAGE_DIR`. Run as many copies as

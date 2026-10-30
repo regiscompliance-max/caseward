@@ -19,7 +19,7 @@ from psycopg_pool import ConnectionPool
 
 from caseward.db import RequestContext, scoped_transaction
 from caseward.services import Services
-from caseward.worker import documents
+from caseward.worker import documents, extraction
 from caseward.worker.deadlines import compute_deadlines
 
 log = logging.getLogger("caseward.worker")
@@ -40,6 +40,8 @@ def build_handlers(services: Services | None) -> dict[str, JobHandler]:
             handlers["scan_malware"] = documents.scan_malware(services)
         if services.ocr is not None:
             handlers["ocr"] = documents.ocr(services)
+        if services.ai is not None:
+            handlers["extract"] = extraction.extract(services)
     return handlers
 
 SYSTEM = RequestContext(actor_kind="worker", request_id="worker")

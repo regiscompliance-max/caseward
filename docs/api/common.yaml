@@ -576,6 +576,9 @@ components:
           $ref: '#/components/schemas/Jsonb'
           description: Required unless rejected. Validated against the output schema for the certificate type.
         notes: {type: string, maxLength: 4000}
+        property_id:
+          $ref: '#/components/schemas/Uuid'
+          description: Links the document to this property first, if it has none or the wrong one.
       if:
         properties: {decision: {const: rejected}}
       then:

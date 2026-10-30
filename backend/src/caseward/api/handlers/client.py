@@ -1,7 +1,7 @@
 """Client API handlers. Operations not listed here return 501."""
 
 from caseward.api.framework import Call, Result
-from caseward.api.handlers import documents, shared
+from caseward.api.handlers import certificates, documents, shared
 
 
 def create_case(call: Call) -> Result:
@@ -25,4 +25,8 @@ HANDLERS = {
     "listDocuments": documents.list_documents,
     "getDocument": documents.get_document,
     "downloadDocument": documents.download_document,
+    "listInspections": certificates.list_inspections,
+    "getInspection": certificates.get_inspection,
+    "listDefects": certificates.list_defects,
+    "getDefect": certificates.get_defect,
 }
