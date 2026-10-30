@@ -94,3 +94,66 @@ def grok(api_key: str, model: str, approval: ResidencyApproval, base_url: str, *
     """xAI Grok. There is no default base_url on purpose: the approved regional
     endpoint must be chosen and agreed with xAI in writing."""
     return OpenAICompatibleProvider("xai", base_url, api_key, model, approval, **kwargs)
+
+
+# Bedrock model IDs with these prefixes are cross-region or global inference
+# profiles, which may process the request outside the UK.
+CROSS_REGION_PREFIXES = ("eu.", "us.", "us-gov.", "apac.", "ap.", "jp.", "au.", "ca.", "global.")
+UK_BEDROCK_REGIONS = frozenset({"eu-west-2"})
+
+
+def check_in_region_model(model_id: str, region: str) -> None:
+    if region not in UK_BEDROCK_REGIONS:
+        raise ResidencyNotApproved(f"Bedrock region {region!r} is not in the UK")
+    name = model_id.rsplit("/", 1)[-1] if model_id.startswith("arn:") else model_id
+    if name.startswith(CROSS_REGION_PREFIXES):
+        raise ResidencyNotApproved(f"{model_id!r} is a cross-region or global profile; use an in-region model ID")
+    if "inference-profile" in model_id:
+        # Even an application inference profile in eu-west-2 can wrap a
+        # cross-region profile, and its ID does not say which. Refuse them all.
+        raise ResidencyNotApproved(f"{model_id!r} is an inference profile; use an in-region model ID")
+    if model_id.startswith("arn:") and not model_id.startswith(f"arn:aws:bedrock:{region}:"):
+        raise ResidencyNotApproved(f"{model_id!r} is not in {region}")
+
+
+class BedrockProvider:
+    """Amazon Bedrock in London, in-region only (AWS: requests to an in-region
+    model are processed within the Region called). Structured output uses the
+    Converse API with one forced tool whose input schema is our JSON schema."""
+
+    name = "bedrock"
+
+    def __init__(self, model_id: str, approval: ResidencyApproval, region: str = "eu-west-2", client=None,
+                 max_tokens: int = 4096):
+        check_in_region_model(model_id, region)
+        if not approval.reference.strip():
+            raise ResidencyNotApproved("no residency approval recorded for the AI provider")
+        if client is None:
+            import boto3
+            from botocore.config import Config
+            client = boto3.client("bedrock-runtime", region_name=region,
+                                  config=Config(read_timeout=120, retries={"max_attempts": 2, "mode": "standard"}))
+        self.client = client
+        self.model_id = model_id
+        self.max_tokens = max_tokens
+
+    def complete_json(self, system, user, schema_name, schema):
+        import botocore.exceptions
+        try:
+            response = self.client.converse(
+                modelId=self.model_id,
+                system=[{"text": system}],
+                messages=[{"role": "user", "content": [{"text": user}]}],
+                inferenceConfig={"temperature": 0, "maxTokens": self.max_tokens},
+                toolConfig={"tools": [{"toolSpec": {"name": schema_name, "description": "Record the result.",
+                                                    "inputSchema": {"json": schema}}}],
+                            "toolChoice": {"tool": {"name": schema_name}}},
+            )
+        except (botocore.exceptions.BotoCoreError, botocore.exceptions.ClientError) as exc:
+            # Error messages can quote the request; keep only the error type and code.
+            code = getattr(exc, "response", {}).get("Error", {}).get("Code", "") if hasattr(exc, "response") else ""
+            raise ProviderError(f"bedrock call failed: {type(exc).__name__} {code}".strip()) from None
+        for block in response.get("output", {}).get("message", {}).get("content", []):
+            if "toolUse" in block and block["toolUse"].get("name") == schema_name:
+                return Completion(block["toolUse"]["input"], self.name, self.model_id)
+        raise ProviderError(f"bedrock returned no {schema_name} result (stop reason {response.get('stopReason')})")

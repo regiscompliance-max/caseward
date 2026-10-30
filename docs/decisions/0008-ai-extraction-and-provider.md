@@ -73,3 +73,11 @@ off by a person, not an assumption in code.
   reference in `CASEWARD_AI_RESIDENCY_APPROVAL`.
 - The 98% gate cannot be measured until the compliance expert's labelled set
   exists (at least 30 documents per pack).
+
+## Amendment (30 Oct 2026)
+
+The founder chose **Amazon Bedrock**. In-region inference in London is
+documented for Claude models, and the `BedrockProvider` allows only
+in-region model IDs in eu-west-2 (decision 0013). The Grok adapter stays but
+is not configured.
+

@@ -40,9 +40,19 @@ def storage_from_env() -> Storage:
 
 def ai_from_env() -> ModelProvider | None:
     """None unless an AI provider is fully configured, including its residency
-    approval. Without one, extraction jobs wait in the queue."""
-    from caseward.ai.provider import ResidencyApproval, grok
-    if "CASEWARD_AI_API_KEY" not in os.environ:
+    approval. Without one, extraction jobs wait in the queue.
+
+    CASEWARD_AI_PROVIDER=bedrock (the chosen provider): CASEWARD_AI_MODEL is an
+    in-region model ID in eu-west-2, CASEWARD_AI_RESIDENCY_APPROVAL records the
+    agreement, and credentials come from the task's IAM role.
+    CASEWARD_AI_PROVIDER=grok: the xAI adapter, as before."""
+    from caseward.ai.provider import BedrockProvider, ResidencyApproval, grok
+    provider = os.environ.get("CASEWARD_AI_PROVIDER")
+    if provider == "bedrock":
+        return BedrockProvider(os.environ["CASEWARD_AI_MODEL"],
+                               ResidencyApproval(os.environ.get("CASEWARD_AI_RESIDENCY_APPROVAL", ""), frozenset()),
+                               region=os.environ.get("CASEWARD_AI_REGION", "eu-west-2"))
+    if provider != "grok" and "CASEWARD_AI_API_KEY" not in os.environ:
         return None
     approval = ResidencyApproval(
         reference=os.environ.get("CASEWARD_AI_RESIDENCY_APPROVAL", ""),

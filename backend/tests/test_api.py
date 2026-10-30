@@ -488,3 +488,31 @@ def test_settings_read_several_providers(monkeypatch):
     settings = Settings.from_env("CASEWARD_OPS")
     assert [p.issuer for p in settings.identity_providers] == [ISSUER, ISSUER_B]
     assert settings.identity_providers[1].mfa_acr == (ACR_MFA,)
+
+
+def test_entra_v1_access_tokens_prove_mfa_and_v2_tokens_without_amr_are_refused(staff_conn, database, world):
+    """Microsoft 365 / Entra ID: the API app registration issues v1 access tokens
+    (requestedAccessTokenVersion 1), which carry amr. A token without it is refused,
+    so a misconfigured app registration fails safe."""
+    from caseward.api.auth import MultiIssuerVerifier
+    tenant = "11111111-2222-3333-4444-555555555555"
+    entra = f"https://sts.windows.net/{tenant}/"
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    with scoped_transaction(staff_conn, world.staff_ctx) as conn:
+        user = insert(conn, "app_user", idp_subject=f"{entra}|entra-oid-{world.tag}",
+                      email=f"entra-{world.tag}@example.test", display_name="Entra user")
+        conn.execute("insert into caseward.membership (user_id, client_id, role) values (%s, %s, 'client_viewer')",
+                     [user, world.landlord_a])
+    pool = ConnectionPool(psycopg.conninfo.make_conninfo(database, user="cw_test_app", password=PASSWORD),
+                          kwargs={"autocommit": True}, min_size=1, max_size=1, open=True)
+    try:
+        verifier = MultiIssuerVerifier([JwtVerifier(entra, "api://caseward-client", key=key.public_key())])
+        api = TestClient(build_app("client", Settings(database_url="", validate_responses=True), pool, verifier,
+                                   client_handlers.HANDLERS))
+        v1 = token_from(entra, key, f"entra-oid-{world.tag}", audience="api://caseward-client", ver="1.0",
+                        amr=["pwd", "mfa"], tid=tenant)
+        assert get_me(api, v1).status_code == 200
+        no_amr = token_from(entra, key, f"entra-oid-{world.tag}", audience="api://caseward-client", ver="2.0", tid=tenant)
+        problem(get_me(api, no_amr), 401, "mfa_required")
+    finally:
+        pool.close()

@@ -68,12 +68,17 @@ export CASEWARD_CLAMD_HOST=clamd    # ClamAV daemon
 ```
 
 AI extraction stays off until a provider is configured **with its UK
-residency approval** (decision 0008):
+residency approval** (decisions 0008 and 0013). The chosen provider is Amazon
+Bedrock, with in-region models in London only; credentials come from the
+task's IAM role:
 
 ```sh
-export CASEWARD_AI_API_KEY=... CASEWARD_AI_MODEL=... CASEWARD_AI_BASE_URL=https://<approved-endpoint>/v1
-export CASEWARD_AI_ALLOWED_HOSTS=<approved-endpoint> CASEWARD_AI_RESIDENCY_APPROVAL="<signed agreement reference>"
+export CASEWARD_AI_PROVIDER=bedrock CASEWARD_AI_REGION=eu-west-2
+export CASEWARD_AI_MODEL=<in-region model ID from the Bedrock console, e.g. Claude Sonnet 5>
+export CASEWARD_AI_RESIDENCY_APPROVAL="<AWS agreement and DPA reference>"
 ```
+
+Staff sign in with Microsoft 365: see [docs/deployment/entra-id.md](docs/deployment/entra-id.md).
 
 Score a prompt or model change against the labelled set before it ships:
 `python -m caseward.ai.evaluate path/to/labelled-set`.
