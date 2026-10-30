@@ -4,6 +4,10 @@
 {
   "name": "caseward",
   "compatibility_date": "2026-10-01",
+  // Serve the preview at https://caseward.<account subdomain>.workers.dev,
+  // and give each pull request's build its own preview URL.
+  "workers_dev": true,
+  "preview_urls": true,
   "assets": {
     "directory": "./site",
     "not_found_handling": "404-page"
