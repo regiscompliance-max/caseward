@@ -4,11 +4,10 @@ and staff see everything."""
 
 from datetime import UTC, datetime
 from caseward.api.framework import Call, Result
-from caseward.api.handlers.shared import (CASE_EVENT_SELECT, DEADLINE_SELECT, deadline_out, decode_cursor,
-                                          encode_cursor)
+from caseward import timeline
+from caseward.api.handlers.shared import decode_cursor, encode_cursor
 from caseward.api.problems import not_found
 from caseward.deadlines import UK
-from caseward.letters import uk_date
 
 CLOSED_CASE = ("resolved", "closed", "withdrawn")
 
@@ -56,43 +55,10 @@ def get_dashboard(call: Call) -> Result:
 
 
 def get_case_timeline(call: Call) -> Result:
-    case = call.row("select id, client_id, awareness_evidence_document_id from caseward.hazard_case where id = %s",
-                    [call.path["id"]])
+    case = call.row("select id, client_id from caseward.hazard_case where id = %s", [call.path["id"]])
     if case is None:
         raise not_found()
-    entries = []
-
-    events = call.rows(CASE_EVENT_SELECT + " where e.case_id = %s", [case["id"]])
-    for e in events:
-        summary = e["kind_name"] + (" (correction)" if e["corrects_event_id"] else "")
-        entries.append({"entry_type": "event", "at": e["occurred_at"], "summary": summary, "event": e, "_id": e["id"]})
-
-    for s in call.rows("select id, from_status, to_status, changed_by, changed_at from caseward.case_status_change"
-                       " where case_id = %s", [case["id"]]):
-        summary = f"Status: {s['to_status']}" if s["from_status"] is None else \
-            f"Status: {s['from_status']} to {s['to_status']}"
-        entries.append({"entry_type": "status_change", "at": s["changed_at"], "summary": summary, "_id": s["id"],
-                        "status_change": {k: s[k] for k in ("from_status", "to_status", "changed_by")}})
-
-    for d in call.rows(DEADLINE_SELECT + " where d.case_id = %s", [case["id"]]):
-        entries.append({"entry_type": "deadline", "at": d["clock_started_at"], "_id": d["id"],
-                        "summary": f"{d['rule_title']}: due {uk_date(d['due_local_date'])}", "deadline": deadline_out(d)})
-
-    # Letters are hidden from providers by row-level security.
-    for l in call.rows("select id, channel, sent_at from caseward.letter where case_id = %s and sent_at is not null",
-                       [case["id"]]):
-        entries.append({"entry_type": "letter", "at": l["sent_at"], "summary": f"Letter sent ({l['channel']})",
-                        "letter_id": l["id"], "_id": l["id"]})
-
-    document_ids = {e["evidence_document_id"] for e in events if e["evidence_document_id"]}
-    if case["awareness_evidence_document_id"]:
-        document_ids.add(case["awareness_evidence_document_id"])
-    for doc in call.rows("select id, doc_type, received_at from caseward.document where id = any(%s)",
-                         [list(document_ids)]):
-        entries.append({"entry_type": "document", "at": doc["received_at"], "document_id": doc["id"], "_id": doc["id"],
-                        "summary": f"Document received ({doc['doc_type'].replace('_', ' ')})"})
-
-    entries.sort(key=lambda e: (e["at"], e["entry_type"], str(e["_id"])))
+    entries = timeline.build(call.rows, case["id"])
     cursor = decode_cursor(call)
     if cursor:
         after = (datetime.fromisoformat(cursor[0]), cursor[1], cursor[2])

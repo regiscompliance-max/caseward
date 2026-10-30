@@ -2,8 +2,8 @@
 
 from caseward.api.framework import Call, Result
 from caseward.api.handlers import configuration as config
-from caseward.api.handlers import (admin, documents, extractions, letters, monitoring, queue, reports, shared,
-                                   tenants, updates)
+from caseward.api.handlers import (admin, documents, exports, extractions, letters, monitoring, queue, reports,
+                                   shared, tenants, updates)
 
 
 def create_case(call: Call) -> Result:
@@ -90,4 +90,5 @@ HANDLERS = {
     "verifyAuditChain": monitoring.verify_audit_chain,
     "getJobSummary": monitoring.get_job_summary,
     "retryJob": monitoring.retry_job,
+    "createExport": exports.prepare_export_for_client,
 }

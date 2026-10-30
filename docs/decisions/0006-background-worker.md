@@ -23,9 +23,11 @@ Date: 30 Oct 2026. Status: proposed; needs security lead review.
   overdue open deadlines as `missed` and raises one `deadline_alert` per
   level reached (50%, 80%, overdue). A late sweep raises only the highest
   level reached.
-- **The worker can see every deadline.** To sweep, it may select and update
-  every `deadline` and `deadline_alert` row (policies for `caseward_worker`).
-  These rows hold dates and rule references, not personal data.
+- ~~**The worker can see every deadline.** To sweep, it may select and update
+  every `deadline` and `deadline_alert` row (policies for `caseward_worker`).~~
+  **Amended (migration 0012, decision 0011):** that access leaked across
+  clients during ordinary jobs. Only `sweep_deadlines()` now crosses clients,
+  running as the `caseward_sweeper` role.
 - **No holiday calendar, no deadline.** If the bank holiday calendar does
   not reach the due date, the job fails with `CalendarMissing` rather than
   guess. A GOV.UK calendar covers to 31 December of the last year it lists.

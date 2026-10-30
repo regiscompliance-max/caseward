@@ -9,6 +9,7 @@ from typing import Any
 from uuid import UUID
 
 from caseward.api.encoding import to_json
+from caseward.queries import CASE_EVENT_SELECT, DEADLINE_SELECT, deadline_out  # noqa: F401 (re-exported)
 from caseward.api.framework import Call, Result
 from caseward.api.problems import Problem, not_found
 
@@ -110,36 +111,6 @@ def create_property(call: Call) -> Result:
 
 
 # -- Deadlines --------------------------------------------------------------
-
-DEADLINE_SELECT = """
-  select d.id, d.case_id, d.defect_id, d.inspection_id, d.rule_key, d.rule_version, r.title as rule_title,
-         r.rule_pack, d.clock_started_at, d.due_at,
-         (d.due_at at time zone 'Europe/London')::date as due_local_date,
-         d.status, d.completed_at, p.alert_level, p.elapsed_fraction
-  from caseward.deadline d
-  join caseward.deadline_rule r on (r.rule_key, r.version) = (d.rule_key, d.rule_version)
-  left join caseward.deadline_progress p on p.id = d.id
-"""
-
-
-def deadline_out(row: dict) -> dict:
-    for kind in ("case", "defect", "inspection"):
-        if row[f"{kind}_id"] is not None:
-            subject = {"kind": kind, "id": row[f"{kind}_id"]}
-    return {
-        "id": row["id"],
-        "subject": subject,
-        "rule": {"key": row["rule_key"], "version": row["rule_version"], "title": row["rule_title"],
-                 "rule_pack": row["rule_pack"]},
-        "clock_started_at": row["clock_started_at"],
-        "due_at": row["due_at"],
-        "due_local_date": row["due_local_date"],
-        "status": row["status"],
-        "completed_at": row["completed_at"],
-        "alert_level": row["alert_level"],
-        "elapsed_fraction": row["elapsed_fraction"],
-    }
-
 
 def deadlines_by_id(call: Call, ids: list[UUID]) -> dict[UUID, dict]:
     if not ids:
@@ -327,16 +298,6 @@ def create_case(call: Call, client_id: UUID) -> Result:
     # Recording case_aware queues deadline calculation (database trigger, 0003).
     row = call.row(CASE_SELECT.format(sort="null") + " where c.id = %s", [case_id])
     return Result(201, cases_out(call, [row])[0], headers={"Location": f"/cases/{case_id}"})
-
-
-CASE_EVENT_SELECT = """
-  select e.id, e.case_id, e.kind, t.name as kind_name, t.is_excuse_evidence, e.occurred_at, e.channel, e.notes,
-         e.evidence_document_id, e.contractor_client_id, e.corrects_event_id,
-         (select c.id from caseward.case_event c where c.corrects_event_id = e.id limit 1) as corrected_by_event_id,
-         e.recorded_by, e.recorded_at
-  from caseward.case_event e
-  join caseward.event_type t on (t.code, t.subject_kind) = (e.kind, e.subject_kind)
-"""
 
 
 def create_case_event(call: Call) -> Result:

@@ -208,3 +208,24 @@ def test_alerts_are_isolated_per_client(app_conn, worker, world, rule, calendar_
     worker.sweep()
     assert alerts(app_conn, world.a, deadline) == ["alert_80"]
     assert alerts(app_conn, world.b, deadline) == []
+
+
+def test_jobs_for_one_client_cannot_see_another_clients_deadlines(app_conn, admin_dsn, worker, world, rule,
+                                                                  calendar_ew):
+    """Regression: the worker login once saw every deadline (for the sweep), even
+    while running one client's job. Only sweep_deadlines() may cross clients."""
+    with scoped_transaction(app_conn, world.a) as conn:
+        new_deadline(conn, world, rule, calendar_ew, new_case(conn, world))
+    seen = []
+
+    def peek(conn, job):
+        seen.append(conn.execute("select count(*) from caseward.deadline where client_id = %s",
+                                 [world.landlord_a]).fetchone()[0])
+
+    key = f"peek-{uuid.uuid4()}"
+    with psycopg.connect(admin_dsn) as admin:
+        admin.execute("insert into caseward.job (client_id, kind, idempotency_key) values (%s, 'ocr', %s)",
+                      [world.landlord_b, key])
+    Worker(worker.pool, handlers={"ocr": peek}).drain()
+    assert seen and set(seen) == {0}
+    assert worker.sweep() is not None  # the sweep itself still works across clients

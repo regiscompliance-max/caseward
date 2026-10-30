@@ -116,10 +116,20 @@ def test_handlers_must_match_spec_operations(database):
         make_client(database, "client", "cw_test_app", {"noSuchOperation": lambda call: None})
 
 
-def test_unbuilt_operation_returns_501_after_checking_access(landlord, client_api, staff_conn, world):
-    problem(landlord.get(f"/exports/{uuid.uuid4()}"), 501, "not_implemented")
-    viewer = make_viewer(staff_conn, world)
-    problem(As(client_api, world, viewer, "client").post("/uploads", json={}), 403, "forbidden")
+def test_unbuilt_operation_returns_501_after_checking_access(database, staff_conn, world):
+    handlers = {k: v for k, v in client_handlers.HANDLERS.items() if k != "listDocuments"}
+    pool, api = make_client(database, "client", "cw_test_app", handlers)
+    try:
+        problem(As(api, world, "user_a", "client").get("/documents"), 501, "not_implemented")
+        viewer = make_viewer(staff_conn, world)
+        problem(As(api, world, viewer, "client").post("/uploads", json={}), 403, "forbidden")
+    finally:
+        pool.close()
+
+
+@pytest.mark.parametrize("kind, handlers", [("client", client_handlers.HANDLERS), ("operations", ops_handlers.HANDLERS)])
+def test_every_operation_has_a_handler(kind, handlers):
+    assert {op.operation_id for op in load_spec(kind).operations} == set(handlers)
 
 
 # Authentication --------------------------------------------------------------
