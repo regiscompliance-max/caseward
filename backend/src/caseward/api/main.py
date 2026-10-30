@@ -11,6 +11,7 @@ from caseward.api.auth import JwtVerifier
 from caseward.api.framework import build_app
 from caseward.api.handlers import client, operations
 from caseward.api.settings import Settings
+from caseward.services import Services, storage_from_env
 
 
 def _create(kind: str, prefix: str, handlers) -> FastAPI:
@@ -18,7 +19,7 @@ def _create(kind: str, prefix: str, handlers) -> FastAPI:
     pool = ConnectionPool(settings.database_url, kwargs={"autocommit": True}, max_size=settings.pool_max_size,
                           open=True)
     verifier = JwtVerifier(settings.oidc_issuer, settings.oidc_audience, jwks_url=settings.oidc_jwks_url)
-    app = build_app(kind, settings, pool, verifier, handlers)
+    app = build_app(kind, settings, pool, verifier, handlers, Services(storage=storage_from_env()))
     app.router.on_shutdown.append(pool.close)
     return app
 

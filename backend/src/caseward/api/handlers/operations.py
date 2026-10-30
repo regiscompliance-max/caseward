@@ -1,7 +1,7 @@
 """Operations API handlers. Operations not listed here return 501."""
 
 from caseward.api.framework import Call, Result
-from caseward.api.handlers import shared
+from caseward.api.handlers import documents, shared
 
 
 def create_case(call: Call) -> Result:
@@ -20,4 +20,9 @@ HANDLERS = {
     "acknowledgeDeadlineAlert": shared.acknowledge_deadline_alert,
     "listHazardCategories": lambda call: shared.list_hazard_categories(call, enabled_only=False),
     "listEventTypes": lambda call: shared.list_event_types(call, enabled_only=False),
+    "createUpload": documents.create_upload,
+    "createDocument": lambda call: documents.create_document(call, default_source="email"),
+    "listDocuments": documents.list_documents,
+    "getDocument": documents.get_document_with_pages,
+    "getDocumentPage": documents.get_document_page,
 }

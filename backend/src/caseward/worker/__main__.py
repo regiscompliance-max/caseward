@@ -11,7 +11,8 @@ import threading
 
 from psycopg_pool import ConnectionPool
 
-from caseward.worker.runner import Worker
+from caseward.services import worker_services_from_env
+from caseward.worker.runner import Worker, build_handlers
 
 
 def main() -> None:
@@ -22,7 +23,7 @@ def main() -> None:
     signal.signal(signal.SIGINT, lambda *_: stop.set())
     with ConnectionPool(os.environ["CASEWARD_WORKER_DATABASE_URL"], kwargs={"autocommit": True},
                         min_size=1, max_size=2) as pool:
-        Worker(pool, poll_seconds=float(os.environ.get("CASEWARD_WORKER_POLL_SECONDS", "2")),
+        Worker(pool, handlers=build_handlers(worker_services_from_env()), poll_seconds=float(os.environ.get("CASEWARD_WORKER_POLL_SECONDS", "2")),
                sweep_seconds=float(os.environ.get("CASEWARD_WORKER_SWEEP_SECONDS", "60"))).run_forever(stop)
 
 

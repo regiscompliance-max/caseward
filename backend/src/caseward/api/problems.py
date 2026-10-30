@@ -8,7 +8,8 @@ from psycopg import errors
 
 class Problem(Exception):
     def __init__(self, status: int, code: str, title: str, detail: str | None = None,
-                 errors: list[dict] | None = None, headers: dict[str, str] | None = None):
+                 errors: list[dict] | None = None, headers: dict[str, str] | None = None,
+                 extra: dict | None = None):
         super().__init__(detail or title)
         self.status = status
         self.code = code
@@ -16,6 +17,7 @@ class Problem(Exception):
         self.detail = detail
         self.errors = errors
         self.headers = headers or {}
+        self.extra = extra or {}
 
     def body(self, request_id: str | None) -> dict:
         body = {"type": f"https://docs.caseward.example/problems/{self.code}", "title": self.title,
@@ -26,7 +28,7 @@ class Problem(Exception):
             body["errors"] = self.errors
         if request_id:
             body["request_id"] = request_id
-        return body
+        return {**body, **self.extra}
 
 
 def not_found() -> Problem:

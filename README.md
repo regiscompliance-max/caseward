@@ -51,5 +51,16 @@ python -m caseward.worker
 ```
 
 It calculates deadlines, sweeps for missed deadlines and raises alerts every
-minute, and puts back jobs left by a stopped worker. Run as many copies as
+minute, and puts back jobs left by a stopped worker. It also scans, renders
+and reads documents, so it needs:
+
+```sh
+export CASEWARD_S3_BUCKET=caseward-documents CASEWARD_S3_REGION=eu-west-2 CASEWARD_S3_KMS_KEY_ID=alias/caseward
+export CASEWARD_CLAMD_HOST=clamd    # ClamAV daemon
+# and the tesseract binary with English data installed in the image
+```
+
+The APIs need the same `CASEWARD_S3_*` settings to issue upload and download
+links. For local development, use `CASEWARD_STORAGE_BACKEND=local` and
+`CASEWARD_LOCAL_STORAGE_DIR`. Run as many copies as
 you like: two workers never claim the same job.

@@ -40,6 +40,7 @@ from caseward.api.problems import Problem
 from caseward.api.settings import Settings
 from caseward.api.spec import Operation, load_spec
 from caseward.db import RequestContext, record_access, scoped_transaction
+from caseward.services import Services
 
 PROBLEM_JSON = "application/problem+json"
 
@@ -65,8 +66,10 @@ def _uuid(value: object) -> bool:
 @dataclass
 class Result:
     status: int
+    # JSON-serialisable, or bytes with media_type for binary responses.
     body: Any = None
     headers: dict[str, str] = field(default_factory=dict)
+    media_type: str | None = None
     # For view auditing when the entity is not simply the {id} path parameter,
     # or belongs to a client other than the acting one.
     audit_entity_id: str | None = None
@@ -84,6 +87,7 @@ class Call:
     query: dict[str, Any]
     headers: dict[str, Any]
     body: Any
+    services: Services | None = None
 
     @property
     def is_provider(self) -> bool:
@@ -102,7 +106,7 @@ Handler = Callable[[Call], Result]
 
 
 def build_app(kind: str, settings: Settings, pool: ConnectionPool, verifier: TokenVerifier,
-              handlers: dict[str, Handler]) -> FastAPI:
+              handlers: dict[str, Handler], services: Services | None = None) -> FastAPI:
     spec = load_spec(kind, settings.spec_dir)
     unknown = set(handlers) - {op.operation_id for op in spec.operations}
     if unknown:
@@ -113,7 +117,8 @@ def build_app(kind: str, settings: Settings, pool: ConnectionPool, verifier: Tok
     app.state.spec = spec
 
     for op in spec.operations:
-        app.add_api_route(op.path, _endpoint(kind, op, handlers.get(op.operation_id), settings, pool, verifier),
+        app.add_api_route(op.path, _endpoint(kind, op, handlers.get(op.operation_id), settings, pool, verifier,
+                                             services),
                           methods=[op.method.upper()], name=op.operation_id)
 
     @app.exception_handler(StarletteHTTPException)
@@ -124,15 +129,16 @@ def build_app(kind: str, settings: Settings, pool: ConnectionPool, verifier: Tok
     return app
 
 
-def _endpoint(kind, op, handler, settings, pool, verifier):
+def _endpoint(kind, op, handler, settings, pool, verifier, services):
     async def endpoint(request: Request) -> Response:
         body = await request.body()
-        return await run_in_threadpool(_handle, kind, op, handler, settings, pool, verifier, request, body)
+        return await run_in_threadpool(_handle, kind, op, handler, settings, pool, verifier, services, request,
+                                       body)
     endpoint.__name__ = op.operation_id
     return endpoint
 
 
-def _handle(kind, op, handler, settings, pool, verifier, request: Request, raw_body: bytes) -> Response:
+def _handle(kind, op, handler, settings, pool, verifier, services, request: Request, raw_body: bytes) -> Response:
     request_id = request.headers.get("x-request-id") or str(uuid4())
     try:
         with pool.connection() as conn:
@@ -149,7 +155,7 @@ def _handle(kind, op, handler, settings, pool, verifier, request: Request, raw_b
                 request_id=request_id,
                 source_ip=_source_ip(request),
             )
-            call = Call(conn, op, principal, membership, ctx, path, query, headers, body)
+            call = Call(conn, op, principal, membership, ctx, path, query, headers, body, services)
             with scoped_transaction(conn, ctx):
                 result = _idempotent_replay(call) if op.idempotent else None
                 if result is None:
@@ -162,10 +168,12 @@ def _handle(kind, op, handler, settings, pool, verifier, request: Request, raw_b
     except psycopg.Error as exc:
         return _problem_response(problems.from_database(exc), request_id)
 
+    headers = {"X-Request-Id": request_id, **result.headers}
+    if isinstance(result.body, bytes):
+        return Response(result.body, status_code=result.status, headers=headers, media_type=result.media_type)
     payload = to_json(result.body)
     if settings.validate_responses:
         _validate_response(op, result.status, payload)
-    headers = {"X-Request-Id": request_id, **result.headers}
     if result.body is None:
         return Response(status_code=result.status, headers=headers)
     return JSONResponse(payload, status_code=result.status, headers=headers)

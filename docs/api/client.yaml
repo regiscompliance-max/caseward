@@ -466,6 +466,7 @@ paths:
         '400': {$ref: 'common.yaml#/components/responses/BadRequest'}
         '401': {$ref: 'common.yaml#/components/responses/Unauthorised'}
         '403': {$ref: 'common.yaml#/components/responses/Forbidden'}
+        '404': {$ref: 'common.yaml#/components/responses/NotFound'}
         '409': {$ref: 'common.yaml#/components/responses/Conflict'}
         '422': {$ref: 'common.yaml#/components/responses/UnprocessableContent'}
 

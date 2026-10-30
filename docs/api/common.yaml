@@ -171,6 +171,9 @@ components:
           description: Stable machine-readable error code, e.g. `duplicate_document`, `self_approval`.
           examples: [duplicate_document]
         request_id: {type: string}
+        existing_document_id:
+          $ref: '#/components/schemas/Uuid'
+          description: With `duplicate_document` and `upload_already_used`, the document that already exists.
         errors:
           type: array
           items:

@@ -35,11 +35,11 @@ def token(subject, audience, mfa=True, expires_in=300, key=KEY):
     return jwt.encode(claims, key, algorithm="RS256")
 
 
-def make_client(database, kind, role, handlers):
+def make_client(database, kind, role, handlers, services=None):
     pool = ConnectionPool(psycopg.conninfo.make_conninfo(database, user=role, password=PASSWORD),
                           kwargs={"autocommit": True}, min_size=1, max_size=4, open=True)
     settings = Settings(database_url="", oidc_issuer=ISSUER, oidc_audience=kind, validate_responses=True)
-    app = build_app(kind, settings, pool, JwtVerifier(ISSUER, kind, key=KEY.public_key()), handlers)
+    app = build_app(kind, settings, pool, JwtVerifier(ISSUER, kind, key=KEY.public_key()), handlers, services)
     return pool, TestClient(app)
 
 
@@ -117,7 +117,7 @@ def test_handlers_must_match_spec_operations(database):
 
 
 def test_unbuilt_operation_returns_501_after_checking_access(landlord, client_api, staff_conn, world):
-    problem(landlord.get("/documents"), 501, "not_implemented")
+    problem(landlord.get("/inspections"), 501, "not_implemented")
     viewer = make_viewer(staff_conn, world)
     problem(As(client_api, world, viewer, "client").post("/uploads", json={}), 403, "forbidden")
 

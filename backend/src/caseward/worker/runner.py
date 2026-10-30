@@ -18,6 +18,8 @@ from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
 from caseward.db import RequestContext, scoped_transaction
+from caseward.services import Services
+from caseward.worker import documents
 from caseward.worker.deadlines import compute_deadlines
 
 log = logging.getLogger("caseward.worker")
@@ -27,6 +29,18 @@ JobHandler = Callable[[psycopg.Connection, dict[str, Any]], Any]
 HANDLERS: dict[str, JobHandler] = {
     "compute_deadlines": compute_deadlines,
 }
+
+
+def build_handlers(services: Services | None) -> dict[str, JobHandler]:
+    """Job kinds this worker can run. Kinds whose service is not configured are
+    left out, so those jobs wait for a worker that has it."""
+    handlers = dict(HANDLERS)
+    if services is not None:
+        if services.scanner is not None:
+            handlers["scan_malware"] = documents.scan_malware(services)
+        if services.ocr is not None:
+            handlers["ocr"] = documents.ocr(services)
+    return handlers
 
 SYSTEM = RequestContext(actor_kind="worker", request_id="worker")
 

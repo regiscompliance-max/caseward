@@ -95,6 +95,21 @@ Read with [BRIEF.md](BRIEF.md). Decisions and alternatives are in
 The API also checks fine-grained permissions on top (for example, who may
 approve a letter). Row-level security is the backstop.
 
+## Document lifecycle
+
+1. `POST /uploads` issues a presigned URL. The caller sends the file
+   straight to UK storage, then registers it with `POST /documents`.
+2. `scan_malware` checks the file's size and SHA-256, then scans it.
+   Infected or altered files stop here.
+3. `ocr` renders page images for the viewer and reads the text (from the
+   text layer, or by OCR for scans).
+4. `extract` (AI extraction, next to build) produces a draft. A case handler
+   reviews it side by side with the page images, and only the approved
+   result becomes inspections and defects.
+
+Progress is shown as `processing`: scanning, reading, awaiting_review,
+complete, rejected or failed (decision 0007).
+
 ## Deadline lifecycle
 
 1. An event is recorded: a case's `case_aware` event, any later case event,
