@@ -873,7 +873,7 @@ components:
       properties:
         version: {type: integer}
         body: {type: string}
-        origin: {type: string, enum: [ai_draft, human_edit]}
+        origin: {type: string, enum: [template, ai_draft, human_edit]}
         model_provider: {type: [string, 'null']}
         model_version: {type: [string, 'null']}
         prompt_id: {type: [string, 'null']}
@@ -1237,12 +1237,20 @@ components:
         client_id:
           oneOf: [{$ref: '#/components/schemas/Uuid'}, {type: 'null'}]
           description: Null for a template every client can use.
-        rule_pack: {type: string}
+        rule_pack: {type: [string, 'null']}
         template_key: {type: string}
         language: {type: string, default: en-GB}
         variant: {$ref: '#/components/schemas/TemplateVariant'}
         title: {type: string}
-        body: {type: string}
+        body:
+          type: string
+          description: >
+            Plain text with merge fields such as {{ recipient_name }} and
+            {{ next_deadline_date }}. {{ ai_summary }} is the only part AI writes.
+            Unknown fields are refused.
+        case_event_kind:
+          type: [string, 'null']
+          description: The case event recorded when a letter from this template is sent, e.g. written_summary_sent.
 
     LetterTemplate:
       allOf:
@@ -1257,6 +1265,8 @@ components:
               oneOf: [{$ref: '#/components/schemas/Uuid'}, {type: 'null'}]
             approved_at:
               oneOf: [{$ref: '#/components/schemas/Timestamp'}, {type: 'null'}]
+            created_by:
+              oneOf: [{$ref: '#/components/schemas/Uuid'}, {type: 'null'}]
 
     # -- Audit and operations ---------------------------------------------
     AuditEvent:

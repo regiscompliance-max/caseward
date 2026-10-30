@@ -95,3 +95,9 @@ def test_worker_sees_all_jobs_and_clients_see_their_own(app_conn, worker_conn, w
     assert ids(app_conn, world.a, query, [list(keys.values())]) == {world.landlord_a}
     worker_ctx = RequestContext(actor_kind="worker")
     assert ids(worker_conn, worker_ctx, query, [list(keys.values())]) == {world.landlord_a, world.landlord_b}
+
+
+def test_landlords_see_the_providers_they_engage_and_no_others(app_conn, world):
+    assert ids(app_conn, world.a, "select id from caseward.client") == {world.landlord_a, world.contractor_c}
+    assert ids(app_conn, world.b, "select id from caseward.client") == {world.landlord_b}
+    assert ids(app_conn, world.c, "select id from caseward.client") == {world.contractor_c, world.landlord_a}

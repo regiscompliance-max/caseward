@@ -117,7 +117,7 @@ def test_handlers_must_match_spec_operations(database):
 
 
 def test_unbuilt_operation_returns_501_after_checking_access(landlord, client_api, staff_conn, world):
-    problem(landlord.get("/letters"), 501, "not_implemented")
+    problem(landlord.get("/dashboard"), 501, "not_implemented")
     viewer = make_viewer(staff_conn, world)
     problem(As(client_api, world, viewer, "client").post("/uploads", json={}), 403, "forbidden")
 

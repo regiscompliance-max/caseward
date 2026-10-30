@@ -941,6 +941,7 @@ paths:
         '401': {$ref: 'common.yaml#/components/responses/Unauthorised'}
         '403': {$ref: 'common.yaml#/components/responses/Forbidden'}
         '404': {$ref: 'common.yaml#/components/responses/NotFound'}
+        '409': {$ref: 'common.yaml#/components/responses/Conflict'}
         '422': {$ref: 'common.yaml#/components/responses/UnprocessableContent'}
 
   /letters/{id}/void:
@@ -961,6 +962,7 @@ paths:
         '401': {$ref: 'common.yaml#/components/responses/Unauthorised'}
         '403': {$ref: 'common.yaml#/components/responses/Forbidden'}
         '404': {$ref: 'common.yaml#/components/responses/NotFound'}
+        '409': {$ref: 'common.yaml#/components/responses/Conflict'}
         '422': {$ref: 'common.yaml#/components/responses/UnprocessableContent'}
 
   # -- Tenants -------------------------------------------------------------
@@ -1786,6 +1788,7 @@ paths:
         '400': {$ref: 'common.yaml#/components/responses/BadRequest'}
         '401': {$ref: 'common.yaml#/components/responses/Unauthorised'}
         '403': {$ref: 'common.yaml#/components/responses/Forbidden'}
+        '422': {$ref: 'common.yaml#/components/responses/UnprocessableContent'}
 
   /letter-templates/{id}/approve:
     post:
