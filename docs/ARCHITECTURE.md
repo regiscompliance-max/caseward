@@ -111,9 +111,14 @@ approve a letter). Row-level security is the backstop.
 5. Rule changes create new versions that take effect from a set date.
    Running deadlines keep the version they were created under.
 
+## API
+
+Specified in [api/](api/): `client.yaml`, `operations.yaml` and shared
+`common.yaml`, with conventions in [api/README.md](api/README.md). Tests keep
+the spec's enums in step with the database.
+
 ## Not yet designed
 
-- The API specification (OpenAPI). Next architect deliverable.
 - Extraction JSON schemas per certificate type. These need the compliance
   expert's specs.
 - Reporting queries (deadline performance by hazard, region and contractor).

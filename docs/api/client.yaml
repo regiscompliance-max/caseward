@@ -1,0 +1,1094 @@
+openapi: 3.1.0
+info:
+  title: Caseward client API
+  version: 0.1.0
+  description: >
+    For UK client users: landlords, and the contractors, managing agents and
+    legal teams they engage. Serves the client portal, document intake, and
+    the simple case tracker for clients without their own system.
+
+
+    Conventions are in docs/api/README.md. Every operation states:
+
+    - `x-roles`: membership roles that may call it.
+
+    - `x-provider-access`: what an engaged provider (contractor, managing
+      agent, legal team) acting for a landlord may do: `none`, `read` or
+      `write`. Where it is `none`, providers get 404.
+
+    - `x-audit`: what is written to the audit log (`view`, `write`,
+      `export` or `none`).
+
+
+    Clients never see draft AI output: only approved letters, and
+    inspections and defects created from human-approved extractions.
+servers:
+  - url: https://api.caseward.example/client/v1
+    description: Placeholder. One UK-hosted deployment per environment.
+security:
+  - bearer: []
+tags:
+  - name: Account
+  - name: Properties
+  - name: Tenants
+  - name: Documents
+  - name: Certificates
+  - name: Cases
+  - name: Deadlines
+  - name: Letters
+  - name: Reports
+  - name: Reference
+
+paths:
+  /me:
+    get:
+      operationId: getMe
+      tags: [Account]
+      summary: The signed-in user, their memberships and the acting client
+      x-roles: [client_admin, client_member, client_viewer]
+      x-provider-access: read
+      x-audit: none
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/ActingClient'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: 'common.yaml#/components/schemas/Me'}
+        '401': {$ref: 'common.yaml#/components/responses/Unauthorised'}
+
+  /dashboard:
+    get:
+      operationId: getDashboard
+      tags: [Reports]
+      summary: Deadline, case and certificate counts for the acting client
+      description: >
+        For a provider, counts cover the landlords that engage them, unless
+        `landlord_client_id` narrows it.
+      x-roles: [client_admin, client_member, client_viewer]
+      x-provider-access: read
+      x-audit: view
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/ActingClient'
+        - name: landlord_client_id
+          in: query
+          schema: {$ref: 'common.yaml#/components/schemas/Uuid'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: 'common.yaml#/components/schemas/DashboardSummary'}
+        '401': {$ref: 'common.yaml#/components/responses/Unauthorised'}
+        '403': {$ref: 'common.yaml#/components/responses/Forbidden'}
+
+  /properties:
+    get:
+      operationId: listProperties
+      tags: [Properties]
+      summary: List properties
+      x-roles: [client_admin, client_member, client_viewer]
+      x-provider-access: read
+      x-audit: view
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/ActingClient'
+        - $ref: 'common.yaml#/components/parameters/Cursor'
+        - $ref: 'common.yaml#/components/parameters/Limit'
+        - name: q
+          in: query
+          description: Search by address, postcode or UPRN.
+          schema: {type: string, minLength: 2}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: 'common.yaml#/components/schemas/PageMeta'
+                  - type: object
+                    required: [items]
+                    properties:
+                      items:
+                        type: array
+                        items: {$ref: 'common.yaml#/components/schemas/Property'}
+        '401': {$ref: 'common.yaml#/components/responses/Unauthorised'}
+        '403': {$ref: 'common.yaml#/components/responses/Forbidden'}
+    post:
+      operationId: createProperty
+      tags: [Properties]
+      summary: Add a property
+      x-roles: [client_admin]
+      x-provider-access: none
+      x-audit: write
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/ActingClient'
+        - $ref: 'common.yaml#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: 'common.yaml#/components/schemas/PropertyCreate'}
+      responses:
+        '201':
+          description: Created
+          headers:
+            Location: {$ref: 'common.yaml#/components/headers/Location'}
+          content:
+            application/json:
+              schema: {$ref: 'common.yaml#/components/schemas/Property'}
+        '400': {$ref: 'common.yaml#/components/responses/BadRequest'}
+        '401': {$ref: 'common.yaml#/components/responses/Unauthorised'}
+        '403': {$ref: 'common.yaml#/components/responses/Forbidden'}
+        '409': {$ref: 'common.yaml#/components/responses/Conflict'}
+
+  /properties/{id}:
+    get:
+      operationId: getProperty
+      tags: [Properties]
+      summary: Get a property
+      x-roles: [client_admin, client_member, client_viewer]
+      x-provider-access: read
+      x-audit: view
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/ActingClient'
+        - $ref: 'common.yaml#/components/parameters/Id'
+      responses:
+        '200':
+          description: OK
+          headers:
+            ETag: {$ref: 'common.yaml#/components/headers/ETag'}
+          content:
+            application/json:
+              schema: {$ref: 'common.yaml#/components/schemas/Property'}
+        '401': {$ref: 'common.yaml#/components/responses/Unauthorised'}
+        '404': {$ref: 'common.yaml#/components/responses/NotFound'}
+
+  /properties/{id}/tenancies:
+    get:
+      operationId: listTenancies
+      tags: [Tenants]
+      summary: Tenancies and contacts for a property
+      x-roles: [client_admin, client_member]
+      x-provider-access: none
+      x-audit: view
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/ActingClient'
+        - $ref: 'common.yaml#/components/parameters/Id'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: 'common.yaml#/components/schemas/Tenancy'}
+        '401': {$ref: 'common.yaml#/components/responses/Unauthorised'}
+        '403': {$ref: 'common.yaml#/components/responses/Forbidden'}
+        '404': {$ref: 'common.yaml#/components/responses/NotFound'}
+    post:
+      operationId: createTenancy
+      tags: [Tenants]
+      summary: Start a tenancy record
+      x-roles: [client_admin, client_member]
+      x-provider-access: none
+      x-audit: write
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/ActingClient'
+        - $ref: 'common.yaml#/components/parameters/Id'
+        - $ref: 'common.yaml#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: 'common.yaml#/components/schemas/TenancyCreate'}
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: {$ref: 'common.yaml#/components/schemas/Tenancy'}
+        '400': {$ref: 'common.yaml#/components/responses/BadRequest'}
+        '401': {$ref: 'common.yaml#/components/responses/Unauthorised'}
+        '403': {$ref: 'common.yaml#/components/responses/Forbidden'}
+        '404': {$ref: 'common.yaml#/components/responses/NotFound'}
+
+  /tenancies/{id}/contacts:
+    post:
+      operationId: createTenantContact
+      tags: [Tenants]
+      summary: Add a tenant contact
+      x-roles: [client_admin, client_member]
+      x-provider-access: none
+      x-audit: write
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/ActingClient'
+        - $ref: 'common.yaml#/components/parameters/Id'
+        - $ref: 'common.yaml#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: 'common.yaml#/components/schemas/TenantContactWrite'
+                - required: [full_name]
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: {$ref: 'common.yaml#/components/schemas/TenantContact'}
+        '400': {$ref: 'common.yaml#/components/responses/BadRequest'}
+        '401': {$ref: 'common.yaml#/components/responses/Unauthorised'}
+        '403': {$ref: 'common.yaml#/components/responses/Forbidden'}
+        '404': {$ref: 'common.yaml#/components/responses/NotFound'}
+
+  /tenant-contacts/{id}:
+    patch:
+      operationId: updateTenantContact
+      tags: [Tenants]
+      summary: Update a tenant contact
+      x-roles: [client_admin, client_member]
+      x-provider-access: none
+      x-audit: write
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/ActingClient'
+        - $ref: 'common.yaml#/components/parameters/Id'
+        - $ref: 'common.yaml#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema:
+              allOf:
+                - $ref: 'common.yaml#/components/schemas/TenantContactWrite'
+                - minProperties: 1
+      responses:
+        '200':
+          description: OK
+          headers:
+            ETag: {$ref: 'common.yaml#/components/headers/ETag'}
+          content:
+            application/json:
+              schema: {$ref: 'common.yaml#/components/schemas/TenantContact'}
+        '400': {$ref: 'common.yaml#/components/responses/BadRequest'}
+        '401': {$ref: 'common.yaml#/components/responses/Unauthorised'}
+        '403': {$ref: 'common.yaml#/components/responses/Forbidden'}
+        '404': {$ref: 'common.yaml#/components/responses/NotFound'}
+        '412': {$ref: 'common.yaml#/components/responses/PreconditionFailed'}
+
+  /tenancies/{id}/vulnerabilities:
+    get:
+      operationId: listVulnerabilities
+      tags: [Tenants]
+      summary: Household vulnerability factors (special-category data)
+      description: >
+        Only for users granted special-category access for this client. Every
+        call is audited with the reason given. Others get 403.
+      x-roles: [client_admin, client_member]
+      x-provider-access: none
+      x-audit: view
+      x-special-category: true
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/ActingClient'
+        - $ref: 'common.yaml#/components/parameters/Id'
+        - $ref: 'common.yaml#/components/parameters/AccessReason'
+      responses:
+        '200':
+          description: OK
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: 'common.yaml#/components/schemas/Vulnerability'}
+        '400': {$ref: 'common.yaml#/components/responses/BadRequest'}
+        '401': {$ref: 'common.yaml#/components/responses/Unauthorised'}
+        '403': {$ref: 'common.yaml#/components/responses/Forbidden'}
+        '404': {$ref: 'common.yaml#/components/responses/NotFound'}
+    post:
+      operationId: createVulnerability
+      tags: [Tenants]
+      summary: Record a household vulnerability factor
+      x-roles: [client_admin, client_member]
+      x-provider-access: none
+      x-audit: write
+      x-special-category: true
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/ActingClient'
+        - $ref: 'common.yaml#/components/parameters/Id'
+        - $ref: 'common.yaml#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: 'common.yaml#/components/schemas/VulnerabilityCreate'}
+      responses:
+        '201':
+          description: Recorded. The response body is empty so the data is not echoed back.
+        '400': {$ref: 'common.yaml#/components/responses/BadRequest'}
+        '401': {$ref: 'common.yaml#/components/responses/Unauthorised'}
+        '403': {$ref: 'common.yaml#/components/responses/Forbidden'}
+        '404': {$ref: 'common.yaml#/components/responses/NotFound'}
+
+  /vulnerabilities/{id}/end:
+    post:
+      operationId: endVulnerability
+      tags: [Tenants]
+      summary: Mark a vulnerability factor as no longer applying
+      x-roles: [client_admin, client_member]
+      x-provider-access: none
+      x-audit: write
+      x-special-category: true
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/ActingClient'
+        - $ref: 'common.yaml#/components/parameters/Id'
+      responses:
+        '204': {description: Ended}
+        '401': {$ref: 'common.yaml#/components/responses/Unauthorised'}
+        '403': {$ref: 'common.yaml#/components/responses/Forbidden'}
+        '404': {$ref: 'common.yaml#/components/responses/NotFound'}
+
+  /uploads:
+    post:
+      operationId: createUpload
+      tags: [Documents]
+      summary: Get a URL to upload a file to UK storage
+      description: >
+        Step 1 of 2. If a document with the same SHA-256 already exists for
+        this client, returns 409 with the existing document id (`code`
+        `duplicate_document`) instead of an upload URL.
+      x-roles: [client_admin, client_member]
+      x-provider-access: write
+      x-audit: none
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/ActingClient'
+        - $ref: 'common.yaml#/components/parameters/IdempotencyKey'
+        - name: landlord_client_id
+          in: query
+          description: Required for providers, who upload on a landlord's behalf.
+          schema: {$ref: 'common.yaml#/components/schemas/Uuid'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: 'common.yaml#/components/schemas/UploadCreate'}
+      responses:
+        '201':
+          description: Upload URL issued
+          content:
+            application/json:
+              schema: {$ref: 'common.yaml#/components/schemas/Upload'}
+        '400': {$ref: 'common.yaml#/components/responses/BadRequest'}
+        '401': {$ref: 'common.yaml#/components/responses/Unauthorised'}
+        '403': {$ref: 'common.yaml#/components/responses/Forbidden'}
+        '409': {$ref: 'common.yaml#/components/responses/Conflict'}
+        '429': {$ref: 'common.yaml#/components/responses/TooManyRequests'}
+
+  /documents:
+    get:
+      operationId: listDocuments
+      tags: [Documents]
+      summary: List documents
+      x-roles: [client_admin, client_member, client_viewer]
+      x-provider-access: read
+      x-audit: view
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/ActingClient'
+        - $ref: 'common.yaml#/components/parameters/Cursor'
+        - $ref: 'common.yaml#/components/parameters/Limit'
+        - $ref: 'common.yaml#/components/parameters/PropertyIdFilter'
+        - name: doc_type
+          in: query
+          schema: {$ref: 'common.yaml#/components/schemas/DocType'}
+        - name: received_from
+          in: query
+          schema: {$ref: 'common.yaml#/components/schemas/LocalDate'}
+        - name: received_to
+          in: query
+          schema: {$ref: 'common.yaml#/components/schemas/LocalDate'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: 'common.yaml#/components/schemas/PageMeta'
+                  - type: object
+                    required: [items]
+                    properties:
+                      items:
+                        type: array
+                        items: {$ref: 'common.yaml#/components/schemas/Document'}
+        '401': {$ref: 'common.yaml#/components/responses/Unauthorised'}
+        '403': {$ref: 'common.yaml#/components/responses/Forbidden'}
+    post:
+      operationId: createDocument
+      tags: [Documents]
+      summary: Register an uploaded file as a document
+      description: >
+        Step 2 of 2. Checks that the stored file matches the declared
+        SHA-256 and size, then queues malware scanning, OCR and extraction in
+        the same transaction. Returns 202: processing continues in the
+        background.
+      x-roles: [client_admin, client_member]
+      x-provider-access: write
+      x-audit: write
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/ActingClient'
+        - $ref: 'common.yaml#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: 'common.yaml#/components/schemas/DocumentCreate'}
+      responses:
+        '202':
+          description: Accepted for processing
+          headers:
+            Location: {$ref: 'common.yaml#/components/headers/Location'}
+          content:
+            application/json:
+              schema: {$ref: 'common.yaml#/components/schemas/Document'}
+        '400': {$ref: 'common.yaml#/components/responses/BadRequest'}
+        '401': {$ref: 'common.yaml#/components/responses/Unauthorised'}
+        '403': {$ref: 'common.yaml#/components/responses/Forbidden'}
+        '409': {$ref: 'common.yaml#/components/responses/Conflict'}
+        '422': {$ref: 'common.yaml#/components/responses/UnprocessableContent'}
+
+  /documents/{id}:
+    get:
+      operationId: getDocument
+      tags: [Documents]
+      summary: Get a document's details and processing status
+      x-roles: [client_admin, client_member, client_viewer]
+      x-provider-access: read
+      x-audit: view
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/ActingClient'
+        - $ref: 'common.yaml#/components/parameters/Id'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: 'common.yaml#/components/schemas/Document'}
+        '401': {$ref: 'common.yaml#/components/responses/Unauthorised'}
+        '404': {$ref: 'common.yaml#/components/responses/NotFound'}
+
+  /documents/{id}/download:
+    get:
+      operationId: downloadDocument
+      tags: [Documents]
+      summary: Download the original file
+      description: >
+        Redirects to a signed URL that is valid for 60 seconds. Files that
+        are not `clean` from malware scanning cannot be downloaded (409).
+      x-roles: [client_admin, client_member, client_viewer]
+      x-provider-access: read
+      x-audit: export
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/ActingClient'
+        - $ref: 'common.yaml#/components/parameters/Id'
+      responses:
+        '303':
+          description: Redirect to the signed URL
+          headers:
+            Location: {$ref: 'common.yaml#/components/headers/Location'}
+        '401': {$ref: 'common.yaml#/components/responses/Unauthorised'}
+        '404': {$ref: 'common.yaml#/components/responses/NotFound'}
+        '409': {$ref: 'common.yaml#/components/responses/Conflict'}
+
+  /inspections:
+    get:
+      operationId: listInspections
+      tags: [Certificates]
+      summary: Certificates and inspections, from human-approved extractions
+      x-roles: [client_admin, client_member, client_viewer]
+      x-provider-access: read
+      x-audit: view
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/ActingClient'
+        - $ref: 'common.yaml#/components/parameters/Cursor'
+        - $ref: 'common.yaml#/components/parameters/Limit'
+        - $ref: 'common.yaml#/components/parameters/PropertyIdFilter'
+        - name: certificate_type
+          in: query
+          schema: {type: string}
+        - name: due_before
+          in: query
+          description: Certificates whose next inspection is due before this date (includes expired ones).
+          schema: {$ref: 'common.yaml#/components/schemas/LocalDate'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: 'common.yaml#/components/schemas/PageMeta'
+                  - type: object
+                    required: [items]
+                    properties:
+                      items:
+                        type: array
+                        items: {$ref: 'common.yaml#/components/schemas/Inspection'}
+        '401': {$ref: 'common.yaml#/components/responses/Unauthorised'}
+        '403': {$ref: 'common.yaml#/components/responses/Forbidden'}
+
+  /inspections/{id}:
+    get:
+      operationId: getInspection
+      tags: [Certificates]
+      summary: Get an inspection with its defects
+      x-roles: [client_admin, client_member, client_viewer]
+      x-provider-access: read
+      x-audit: view
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/ActingClient'
+        - $ref: 'common.yaml#/components/parameters/Id'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: 'common.yaml#/components/schemas/Inspection'}
+        '401': {$ref: 'common.yaml#/components/responses/Unauthorised'}
+        '404': {$ref: 'common.yaml#/components/responses/NotFound'}
+
+  /defects:
+    get:
+      operationId: listDefects
+      tags: [Certificates]
+      summary: List defects
+      x-roles: [client_admin, client_member, client_viewer]
+      x-provider-access: read
+      x-audit: view
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/ActingClient'
+        - $ref: 'common.yaml#/components/parameters/Cursor'
+        - $ref: 'common.yaml#/components/parameters/Limit'
+        - $ref: 'common.yaml#/components/parameters/PropertyIdFilter'
+        - name: status
+          in: query
+          schema: {$ref: 'common.yaml#/components/schemas/DefectStatus'}
+        - name: code
+          in: query
+          description: "'scheme:code', e.g. eicr:C1."
+          schema: {type: string}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: 'common.yaml#/components/schemas/PageMeta'
+                  - type: object
+                    required: [items]
+                    properties:
+                      items:
+                        type: array
+                        items: {$ref: 'common.yaml#/components/schemas/Defect'}
+        '401': {$ref: 'common.yaml#/components/responses/Unauthorised'}
+        '403': {$ref: 'common.yaml#/components/responses/Forbidden'}
+
+  /defects/{id}:
+    get:
+      operationId: getDefect
+      tags: [Certificates]
+      summary: Get a defect
+      x-roles: [client_admin, client_member, client_viewer]
+      x-provider-access: read
+      x-audit: view
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/ActingClient'
+        - $ref: 'common.yaml#/components/parameters/Id'
+      responses:
+        '200':
+          description: OK
+          headers:
+            ETag: {$ref: 'common.yaml#/components/headers/ETag'}
+          content:
+            application/json:
+              schema: {$ref: 'common.yaml#/components/schemas/Defect'}
+        '401': {$ref: 'common.yaml#/components/responses/Unauthorised'}
+        '404': {$ref: 'common.yaml#/components/responses/NotFound'}
+    patch:
+      operationId: updateDefect
+      tags: [Certificates]
+      summary: Update a defect's status (for example, a contractor marking it remediated)
+      description: Moving to `verified` or `closed` needs the landlord, not a provider.
+      x-roles: [client_admin, client_member]
+      x-provider-access: write
+      x-audit: write
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/ActingClient'
+        - $ref: 'common.yaml#/components/parameters/Id'
+        - $ref: 'common.yaml#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: 'common.yaml#/components/schemas/DefectUpdate'}
+      responses:
+        '200':
+          description: OK
+          headers:
+            ETag: {$ref: 'common.yaml#/components/headers/ETag'}
+          content:
+            application/json:
+              schema: {$ref: 'common.yaml#/components/schemas/Defect'}
+        '400': {$ref: 'common.yaml#/components/responses/BadRequest'}
+        '401': {$ref: 'common.yaml#/components/responses/Unauthorised'}
+        '403': {$ref: 'common.yaml#/components/responses/Forbidden'}
+        '404': {$ref: 'common.yaml#/components/responses/NotFound'}
+        '412': {$ref: 'common.yaml#/components/responses/PreconditionFailed'}
+
+  /cases:
+    get:
+      operationId: listCases
+      tags: [Cases]
+      summary: List hazard cases
+      x-roles: [client_admin, client_member, client_viewer]
+      x-provider-access: read
+      x-audit: view
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/ActingClient'
+        - $ref: 'common.yaml#/components/parameters/Cursor'
+        - $ref: 'common.yaml#/components/parameters/Limit'
+        - $ref: 'common.yaml#/components/parameters/PropertyIdFilter'
+        - name: status
+          in: query
+          schema: {$ref: 'common.yaml#/components/schemas/CaseStatus'}
+        - name: severity
+          in: query
+          schema: {$ref: 'common.yaml#/components/schemas/Severity'}
+        - name: hazard_category
+          in: query
+          schema: {type: string}
+        - name: sort
+          in: query
+          schema: {type: string, enum: [next_deadline, aware_at, reference], default: next_deadline}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: 'common.yaml#/components/schemas/PageMeta'
+                  - type: object
+                    required: [items]
+                    properties:
+                      items:
+                        type: array
+                        items: {$ref: 'common.yaml#/components/schemas/Case'}
+        '401': {$ref: 'common.yaml#/components/responses/Unauthorised'}
+        '403': {$ref: 'common.yaml#/components/responses/Forbidden'}
+    post:
+      operationId: createCase
+      tags: [Cases]
+      summary: Open a hazard case (simple tracker)
+      description: >
+        Deadlines are calculated in the background from the live rule packs
+        enabled for the client, and appear on the case within seconds. An
+        `emergency` case also raises an immediate alert to the operations
+        team.
+      x-roles: [client_admin, client_member]
+      x-provider-access: none
+      x-audit: write
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/ActingClient'
+        - $ref: 'common.yaml#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: 'common.yaml#/components/schemas/CaseCreate'}
+      responses:
+        '201':
+          description: Created
+          headers:
+            Location: {$ref: 'common.yaml#/components/headers/Location'}
+          content:
+            application/json:
+              schema: {$ref: 'common.yaml#/components/schemas/Case'}
+        '400': {$ref: 'common.yaml#/components/responses/BadRequest'}
+        '401': {$ref: 'common.yaml#/components/responses/Unauthorised'}
+        '403': {$ref: 'common.yaml#/components/responses/Forbidden'}
+        '409': {$ref: 'common.yaml#/components/responses/Conflict'}
+        '422': {$ref: 'common.yaml#/components/responses/UnprocessableContent'}
+
+  /cases/{id}:
+    get:
+      operationId: getCase
+      tags: [Cases]
+      summary: Get a case
+      x-roles: [client_admin, client_member, client_viewer]
+      x-provider-access: read
+      x-audit: view
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/ActingClient'
+        - $ref: 'common.yaml#/components/parameters/Id'
+      responses:
+        '200':
+          description: OK
+          headers:
+            ETag: {$ref: 'common.yaml#/components/headers/ETag'}
+          content:
+            application/json:
+              schema: {$ref: 'common.yaml#/components/schemas/Case'}
+        '401': {$ref: 'common.yaml#/components/responses/Unauthorised'}
+        '404': {$ref: 'common.yaml#/components/responses/NotFound'}
+    patch:
+      operationId: updateCase
+      tags: [Cases]
+      summary: Change a case's status, severity or assigned contractor
+      x-roles: [client_admin, client_member]
+      x-provider-access: none
+      x-audit: write
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/ActingClient'
+        - $ref: 'common.yaml#/components/parameters/Id'
+        - $ref: 'common.yaml#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: 'common.yaml#/components/schemas/CaseUpdate'}
+      responses:
+        '200':
+          description: OK
+          headers:
+            ETag: {$ref: 'common.yaml#/components/headers/ETag'}
+          content:
+            application/json:
+              schema: {$ref: 'common.yaml#/components/schemas/Case'}
+        '400': {$ref: 'common.yaml#/components/responses/BadRequest'}
+        '401': {$ref: 'common.yaml#/components/responses/Unauthorised'}
+        '403': {$ref: 'common.yaml#/components/responses/Forbidden'}
+        '404': {$ref: 'common.yaml#/components/responses/NotFound'}
+        '412': {$ref: 'common.yaml#/components/responses/PreconditionFailed'}
+
+  /cases/{id}/events:
+    post:
+      operationId: createCaseEvent
+      tags: [Cases]
+      summary: Record something that happened on a case
+      description: >
+        For example an investigation, a written summary, an access attempt
+        or a supply delay. Events are permanent evidence and cannot be edited;
+        to fix a mistake, post a new event with `corrects_event_id`. If the
+        event is a deadline's completion event, the deadline is met, and its
+        id is returned in `deadlines_met`.
+      x-roles: [client_admin, client_member]
+      x-provider-access: write
+      x-audit: write
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/ActingClient'
+        - $ref: 'common.yaml#/components/parameters/Id'
+        - $ref: 'common.yaml#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: 'common.yaml#/components/schemas/CaseEventCreate'}
+      responses:
+        '201':
+          description: Recorded
+          content:
+            application/json:
+              schema: {$ref: 'common.yaml#/components/schemas/CaseEvent'}
+        '400': {$ref: 'common.yaml#/components/responses/BadRequest'}
+        '401': {$ref: 'common.yaml#/components/responses/Unauthorised'}
+        '403': {$ref: 'common.yaml#/components/responses/Forbidden'}
+        '404': {$ref: 'common.yaml#/components/responses/NotFound'}
+        '422': {$ref: 'common.yaml#/components/responses/UnprocessableContent'}
+
+  /cases/{id}/timeline:
+    get:
+      operationId: getCaseTimeline
+      tags: [Cases]
+      summary: The full case timeline, oldest first
+      description: >
+        Events, status changes, deadlines, and the documents and letters
+        linked to the case. Providers do not see letter entries.
+      x-roles: [client_admin, client_member, client_viewer]
+      x-provider-access: read
+      x-audit: view
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/ActingClient'
+        - $ref: 'common.yaml#/components/parameters/Id'
+        - $ref: 'common.yaml#/components/parameters/Cursor'
+        - $ref: 'common.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: 'common.yaml#/components/schemas/PageMeta'
+                  - type: object
+                    required: [items]
+                    properties:
+                      items:
+                        type: array
+                        items: {$ref: 'common.yaml#/components/schemas/TimelineEntry'}
+        '401': {$ref: 'common.yaml#/components/responses/Unauthorised'}
+        '404': {$ref: 'common.yaml#/components/responses/NotFound'}
+
+  /deadlines:
+    get:
+      operationId: listDeadlines
+      tags: [Deadlines]
+      summary: List deadlines, nearest first
+      x-roles: [client_admin, client_member, client_viewer]
+      x-provider-access: read
+      x-audit: view
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/ActingClient'
+        - $ref: 'common.yaml#/components/parameters/Cursor'
+        - $ref: 'common.yaml#/components/parameters/Limit'
+        - $ref: 'common.yaml#/components/parameters/CaseIdFilter'
+        - $ref: 'common.yaml#/components/parameters/PropertyIdFilter'
+        - name: status
+          in: query
+          schema: {$ref: 'common.yaml#/components/schemas/DeadlineStatus'}
+        - name: alert_level
+          in: query
+          schema: {$ref: 'common.yaml#/components/schemas/AlertLevel'}
+        - name: due_before
+          in: query
+          schema: {$ref: 'common.yaml#/components/schemas/Timestamp'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: 'common.yaml#/components/schemas/PageMeta'
+                  - type: object
+                    required: [items]
+                    properties:
+                      items:
+                        type: array
+                        items: {$ref: 'common.yaml#/components/schemas/Deadline'}
+        '401': {$ref: 'common.yaml#/components/responses/Unauthorised'}
+        '403': {$ref: 'common.yaml#/components/responses/Forbidden'}
+
+  /letters:
+    get:
+      operationId: listLetters
+      tags: [Letters]
+      summary: Approved and sent letters
+      x-roles: [client_admin, client_member, client_viewer]
+      x-provider-access: none
+      x-audit: view
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/ActingClient'
+        - $ref: 'common.yaml#/components/parameters/Cursor'
+        - $ref: 'common.yaml#/components/parameters/Limit'
+        - $ref: 'common.yaml#/components/parameters/CaseIdFilter'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: 'common.yaml#/components/schemas/PageMeta'
+                  - type: object
+                    required: [items]
+                    properties:
+                      items:
+                        type: array
+                        items: {$ref: 'common.yaml#/components/schemas/ApprovedLetter'}
+        '401': {$ref: 'common.yaml#/components/responses/Unauthorised'}
+        '403': {$ref: 'common.yaml#/components/responses/Forbidden'}
+
+  /letters/{id}:
+    get:
+      operationId: getLetter
+      tags: [Letters]
+      summary: Get an approved or sent letter
+      description: Letters still in draft return 404.
+      x-roles: [client_admin, client_member, client_viewer]
+      x-provider-access: none
+      x-audit: view
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/ActingClient'
+        - $ref: 'common.yaml#/components/parameters/Id'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: 'common.yaml#/components/schemas/ApprovedLetter'}
+        '401': {$ref: 'common.yaml#/components/responses/Unauthorised'}
+        '404': {$ref: 'common.yaml#/components/responses/NotFound'}
+
+  /exports:
+    post:
+      operationId: createExport
+      tags: [Reports]
+      summary: Request a CSV or PDF export
+      description: >
+        Exports are generated in the background. Poll the returned export,
+        then download it. `audit_log` is for client admins only.
+      x-roles: [client_admin, client_member, client_viewer]
+      x-provider-access: read
+      x-audit: export
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/ActingClient'
+        - $ref: 'common.yaml#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: 'common.yaml#/components/schemas/ExportCreate'}
+      responses:
+        '202':
+          description: Queued
+          headers:
+            Location: {$ref: 'common.yaml#/components/headers/Location'}
+          content:
+            application/json:
+              schema: {$ref: 'common.yaml#/components/schemas/Export'}
+        '400': {$ref: 'common.yaml#/components/responses/BadRequest'}
+        '401': {$ref: 'common.yaml#/components/responses/Unauthorised'}
+        '403': {$ref: 'common.yaml#/components/responses/Forbidden'}
+        '429': {$ref: 'common.yaml#/components/responses/TooManyRequests'}
+
+  /exports/{id}:
+    get:
+      operationId: getExport
+      tags: [Reports]
+      summary: Check an export's status
+      x-roles: [client_admin, client_member, client_viewer]
+      x-provider-access: read
+      x-audit: none
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/ActingClient'
+        - $ref: 'common.yaml#/components/parameters/Id'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: 'common.yaml#/components/schemas/Export'}
+        '401': {$ref: 'common.yaml#/components/responses/Unauthorised'}
+        '404': {$ref: 'common.yaml#/components/responses/NotFound'}
+
+  /exports/{id}/download:
+    get:
+      operationId: downloadExport
+      tags: [Reports]
+      summary: Download a ready export
+      description: >
+        Only the user who requested the export can download it. Redirects to
+        a signed URL valid for 60 seconds.
+      x-roles: [client_admin, client_member, client_viewer]
+      x-provider-access: read
+      x-audit: export
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/ActingClient'
+        - $ref: 'common.yaml#/components/parameters/Id'
+      responses:
+        '303':
+          description: Redirect to the signed URL
+          headers:
+            Location: {$ref: 'common.yaml#/components/headers/Location'}
+        '401': {$ref: 'common.yaml#/components/responses/Unauthorised'}
+        '404': {$ref: 'common.yaml#/components/responses/NotFound'}
+        '409': {$ref: 'common.yaml#/components/responses/Conflict'}
+
+  /reference/hazard-categories:
+    get:
+      operationId: listHazardCategories
+      tags: [Reference]
+      summary: Hazard categories in the client's live rule packs
+      x-roles: [client_admin, client_member, client_viewer]
+      x-provider-access: read
+      x-audit: none
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/ActingClient'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: 'common.yaml#/components/schemas/HazardCategory'}
+        '401': {$ref: 'common.yaml#/components/responses/Unauthorised'}
+
+  /reference/event-types:
+    get:
+      operationId: listEventTypes
+      tags: [Reference]
+      summary: Case event types the client can record
+      x-roles: [client_admin, client_member, client_viewer]
+      x-provider-access: read
+      x-audit: none
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/ActingClient'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: 'common.yaml#/components/schemas/EventType'}
+        '401': {$ref: 'common.yaml#/components/responses/Unauthorised'}
+
+  /reference/certificate-types:
+    get:
+      operationId: listCertificateTypes
+      tags: [Reference]
+      summary: Certificate types and their defect codes
+      x-roles: [client_admin, client_member, client_viewer]
+      x-provider-access: read
+      x-audit: none
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/ActingClient'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, defect_codes]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: 'common.yaml#/components/schemas/CertificateType'}
+                  defect_codes:
+                    type: array
+                    items: {$ref: 'common.yaml#/components/schemas/DefectCode'}
+        '401': {$ref: 'common.yaml#/components/responses/Unauthorised'}
