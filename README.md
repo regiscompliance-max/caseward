@@ -8,6 +8,7 @@ Start here:
 - [docs/BRIEF.md](docs/BRIEF.md): master brief (every role reads this first)
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): components, security boundaries, data model
 - [docs/api/](docs/api/): API specification and conventions
+- [frontend/ops-console/](frontend/ops-console/): operations console (decision 0012)
 - [docs/decisions/](docs/decisions/): decision records
 - [docs/handoffs/](docs/handoffs/): hand-off notes, newest last
 
@@ -77,3 +78,14 @@ The APIs need the same `CASEWARD_S3_*` settings to issue upload and download
 links. For local development, use `CASEWARD_STORAGE_BACKEND=local` and
 `CASEWARD_LOCAL_STORAGE_DIR`. Run as many copies as
 you like: two workers never claim the same job.
+
+## Operations console
+
+```sh
+cd frontend/ops-console
+npm ci
+CASEWARD_OPS_API_URL=http://localhost:8001/ops/v1 CASEWARD_DEV_SIGN_IN=1 npm run dev   # http://localhost:3100
+npm run typecheck && npm test   # unit and component tests
+npm run e2e                     # browser tests against a mocked API, with axe accessibility scans
+npm run gen:api                 # regenerate API types after changing docs/api/operations.yaml
+```
