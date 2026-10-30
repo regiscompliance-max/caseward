@@ -1,8 +1,10 @@
 """External services the API and worker need, built from the environment."""
 
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from caseward.ai.provider import ModelProvider
 from caseward.pages import OcrEngine
@@ -16,6 +18,16 @@ class Services:
     scanner: Scanner | None = None
     ocr: OcrEngine | None = None
     ai: ModelProvider | None = None
+    # Returns the GOV.UK bank holidays feed. Injected so tests need no network.
+    bank_holidays: Callable[[], dict[str, Any]] | None = None
+
+
+def fetch_govuk_bank_holidays() -> dict[str, Any]:
+    import httpx
+    from caseward.bank_holidays import GOVUK_URL
+    response = httpx.get(GOVUK_URL, timeout=30)
+    response.raise_for_status()
+    return response.json()
 
 
 def storage_from_env() -> Storage:

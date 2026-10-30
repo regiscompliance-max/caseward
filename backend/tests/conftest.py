@@ -156,7 +156,8 @@ def world(staff_conn):
         tenancy = insert(conn, "tenancy", client_id=a, property_id=prop_a, starts_on="2025-01-01")
         contact = insert(conn, "tenant_contact", client_id=a, tenancy_id=tenancy, full_name="Pat Tenant",
                          email="pat@example.test")
-        conn.execute("update caseward.rule_pack set status = 'live', approved_by = %s, approved_at = now()"
+        conn.execute("update caseward.rule_pack set status = 'live', approved_by = %s, approved_at = now(),"
+                     " approval_reference = 'test sign-off'"
                      " where code = 'awaab_social'", [lead])
         conn.execute("insert into caseward.client_rule_pack (client_id, rule_pack, enabled_from)"
                      " values (%s, 'awaab_social', '2025-01-01')", [a])
@@ -184,6 +185,7 @@ def new_rule(conn, world, *, approved=True, **overrides):
     )
     if approved:
         values.update(status="approved", approved_by=world.compliance_lead, approved_at=datetime.now().astimezone(),
+                      approval_reference="test sign-off",
                       effective_from="2025-01-01")
     values.update(overrides)
     insert(conn, "deadline_rule", **values)

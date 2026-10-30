@@ -1084,6 +1084,9 @@ components:
           oneOf: [{$ref: '#/components/schemas/Uuid'}, {type: 'null'}]
         approved_at:
           oneOf: [{$ref: '#/components/schemas/Timestamp'}, {type: 'null'}]
+        approval_reference:
+          type: [string, 'null']
+          description: The qualified person's confirmation recorded when the pack was switched on.
 
     ClientRulePack:
       type: object
@@ -1131,6 +1134,9 @@ components:
         phase: {type: [integer, 'null']}
         in_scope_from:
           oneOf: [{$ref: '#/components/schemas/LocalDate'}, {type: 'null'}]
+        row_version:
+          type: string
+          description: Send as If-Match when updating.
 
     HazardCategoryUpdate:
       type: object
@@ -1156,7 +1162,7 @@ components:
         rule_key: {type: string, pattern: '^[a-z0-9_.-]+$'}
         title: {type: string}
         description: {type: string}
-        legal_reference: {type: string}
+        legal_reference: {type: [string, 'null']}
         jurisdiction: {$ref: '#/components/schemas/Jurisdiction'}
         subject_kind: {type: string, enum: [case, defect, inspection]}
         applies_to: {type: string, description: "Severity, defect 'scheme:code', certificate type, or '*'."}
@@ -1164,7 +1170,8 @@ components:
         completion_event: {type: string}
         duration: {type: integer, minimum: 1}
         duration_unit: {$ref: '#/components/schemas/DurationUnit'}
-        day_type: {$ref: '#/components/schemas/DayType'}
+        day_type:
+          oneOf: [{$ref: '#/components/schemas/DayType'}, {type: 'null'}]
 
     DeadlineRule:
       allOf:
@@ -1187,6 +1194,9 @@ components:
             verified:
               type: boolean
               description: False until approved. The UI shows unapproved rules as UNVERIFIED.
+            approval_reference:
+              type: [string, 'null']
+              description: The qualified person's confirmation given at approval.
 
     DeadlineRuleApprove:
       type: object

@@ -376,7 +376,8 @@ ENABLED_PACKS = """
 
 def list_hazard_categories(call: Call, enabled_only: bool) -> Result:
     where = f"where rule_pack in ({ENABLED_PACKS})" if enabled_only else ""
-    rows = call.rows(f"select code, name, rule_pack, phase, in_scope_from from caseward.hazard_category {where}"
+    rows = call.rows(f"select code, name, rule_pack, phase, in_scope_from, xmin::text as row_version"
+                     f" from caseward.hazard_category {where}"
                      " order by name")
     return Result(200, {"items": rows})
 

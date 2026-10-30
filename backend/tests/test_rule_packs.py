@@ -11,7 +11,8 @@ from conftest import insert, new_case, new_deadline, new_rule
 def test_pack_goes_live_only_with_compliance_lead(staff_conn, world):
     with pytest.raises(psycopg.errors.RaiseException, match="compliance lead"):
         with scoped_transaction(staff_conn, world.staff_ctx) as conn:
-            conn.execute("update caseward.rule_pack set status = 'live', approved_by = %s, approved_at = now()"
+            conn.execute("update caseward.rule_pack set status = 'live', approved_by = %s, approved_at = now(),"
+                     " approval_reference = 'test sign-off'"
                          " where code = 'awaab_private_rented'", [world.caseworker])
 
 

@@ -1,6 +1,7 @@
 """Operations API handlers. Operations not listed here return 501."""
 
 from caseward.api.framework import Call, Result
+from caseward.api.handlers import configuration as config
 from caseward.api.handlers import documents, extractions, letters, queue, reports, shared
 
 
@@ -44,4 +45,25 @@ HANDLERS = {
     "sampleTasksForReview": queue.sample_tasks_for_review,
     "createQualityReview": queue.create_quality_review,
     "getCaseTimeline": reports.get_case_timeline,
+    "listRulePacks": config.list_rule_packs,
+    "activateRulePack": config.activate_rule_pack,
+    "listClientRulePacks": config.list_client_rule_packs,
+    "enableClientRulePack": config.enable_client_rule_pack,
+    "listDeadlineRules": config.list_deadline_rules,
+    "createDeadlineRule": config.create_deadline_rule,
+    "getDeadlineRule": config.get_deadline_rule,
+    "updateDeadlineRule": config.update_deadline_rule,
+    "approveDeadlineRule": config.approve_deadline_rule,
+    "retireDeadlineRule": config.retire_deadline_rule,
+    "testDeadlineRule": config.dry_run_deadline_rule,
+    "listHolidayCalendars": config.list_holiday_calendars,
+    "importHolidayCalendars": config.import_holiday_calendars,
+    "updateHazardCategory": config.update_hazard_category,
+    "listCertificateTypes": config.list_certificate_types,
+    "createCertificateType": config.create_certificate_type,
+    "listDefectCodes": config.list_defect_codes,
+    "createDefectCode": config.create_defect_code,
+    "createEventType": config.create_event_type,
+    "listVulnerabilityFactorTypes": config.list_vulnerability_factor_types,
+    "createVulnerabilityFactorType": config.create_vulnerability_factor_type,
 }
