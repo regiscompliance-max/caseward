@@ -73,7 +73,7 @@ Read with [BRIEF.md](BRIEF.md). Decisions and alternatives are in
 | Extraction | `extraction`, `extraction_review` | Model, prompt and schema versions; per-field confidence; the human decision. |
 | Defect | `inspection`, `defect` | Certificate types and defect codes are configuration (decision 0002). |
 | Case | `hazard_case`, `case_defect`, `case_event`, `case_status_change`, `hazard_category` | `aware_at` starts the clock. `case_event` is the timeline and the reasonable-excuse evidence (decision 0004). |
-| Deadline | `deadline`, `deadline_progress` view | Stores every input needed to recalculate it. Completion events meet it automatically. The view drives the 50%, 80% and 100% alerts. |
+| Deadline | `deadline`, `deadline_progress` view, `deadline_alert` | Stores every input needed to recalculate it. Completion events meet it automatically. The view drives the 50%, 80% and 100% alerts. |
 | DeadlineRule | `deadline_rule`, `holiday_calendar`, `bank_holiday` | Belongs to a rule pack. Start and completion events. Versioned, approved, effective-dated. |
 | Task | `task` | Queue item with SLA. |
 | Letter | `letter_template`, `letter`, `letter_version` | Tenant or contractor recipient. Language and accessible variants (large print, easy read). |
@@ -97,18 +97,26 @@ approve a letter). Row-level security is the backstop.
 
 ## Deadline lifecycle
 
-1. An event is recorded, for example a case is created with `aware_at`, or a
-   `case_event` of kind `investigation_completed` is logged.
-2. The `compute_deadlines` job finds the approved rules whose trigger event
-   matches. The rule's pack must be live and enabled for the client, and the
-   rule must cover the property's jurisdiction and the case severity, defect
-   code or certificate type. The job loads the matching holiday calendar.
+1. An event is recorded: a case's `case_aware` event, any later case event,
+   a new defect or a new inspection. A database trigger queues a
+   `compute_deadlines` job (decision 0006).
+2. The worker finds the matching approved rules:
+   - same trigger event;
+   - the rule's pack is live and enabled for the client on that date;
+   - same jurisdiction as the property;
+   - the rule covers the case severity, defect code or certificate type.
+   It loads the latest holiday calendar for the region, and fails safely if
+   that calendar does not cover the due date.
 3. `caseward.deadlines.compute_due_at` works out `due_at`. The database
-   checks the rule, pack, subject and calendar before storing the row.
+   checks the rule, pack, subject and calendar before storing the row. If
+   the completion event has already been recorded, the deadline is met
+   straight away.
 4. A `case_event` whose kind is the rule's completion event sets
-   `completed_at`, and the status becomes `met` or `missed`. A sweeper marks
-   overdue open deadlines as `missed`. Missed deadlines are never hidden.
-5. Rule changes create new versions that take effect from a set date.
+   `completed_at`, and the status becomes `met` or `missed`.
+5. Every minute the sweep marks overdue open deadlines `missed` and raises
+   alerts at 50%, 80% and overdue. Staff see them at `GET /deadline-alerts`.
+   Missed deadlines are never hidden.
+6. Rule changes create new versions that take effect from a set date.
    Running deadlines keep the version they were created under.
 
 ## API

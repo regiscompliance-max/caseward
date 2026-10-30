@@ -42,3 +42,14 @@ uvicorn caseward.api.main:operations_app --factory --port 8001
 
 Set `CASEWARD_VALIDATE_RESPONSES=1` in development to check every response
 against the spec.
+
+### Running the worker
+
+```sh
+export CASEWARD_WORKER_DATABASE_URL=postgresql://worker@db/caseward   # member of caseward_app and caseward_worker
+python -m caseward.worker
+```
+
+It calculates deadlines, sweeps for missed deadlines and raises alerts every
+minute, and puts back jobs left by a stopped worker. Run as many copies as
+you like: two workers never claim the same job.

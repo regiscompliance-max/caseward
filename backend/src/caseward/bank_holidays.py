@@ -51,3 +51,27 @@ def load_calendar(conn: psycopg.Connection, calendar_id: UUID) -> frozenset[date
         "select holiday_date from caseward.bank_holiday where calendar_id = %s", [calendar_id]
     ).fetchall()
     return frozenset(r[0] for r in rows)
+
+
+# Which GOV.UK bank holiday region applies in each jurisdiction.
+REGION_FOR_JURISDICTION = {
+    "england": "england-and-wales",
+    "wales": "england-and-wales",
+    "scotland": "scotland",
+    "northern_ireland": "northern-ireland",
+}
+
+
+def latest_calendar(conn: psycopg.Connection, region: str) -> tuple[UUID, date] | None:
+    """The newest calendar for a region, and the last date it covers (31 December
+    of the year of its last listed holiday, since GOV.UK publishes whole years)."""
+    row = conn.execute(
+        """
+        select c.id, make_date(extract(year from max(h.holiday_date))::int, 12, 31)
+        from caseward.holiday_calendar c join caseward.bank_holiday h on h.calendar_id = c.id
+        where c.region = %s
+        group by c.id, c.version order by c.version desc limit 1
+        """,
+        [region],
+    ).fetchone()
+    return (row[0], row[1]) if row else None

@@ -8,8 +8,6 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from psycopg.types.json import Jsonb
-
 from caseward.api.encoding import to_json
 from caseward.api.framework import Call, Result
 from caseward.api.problems import Problem, not_found
@@ -175,6 +173,55 @@ def list_deadlines(call: Call) -> Result:
     return Result(200, result)
 
 
+# -- Deadline alerts ----------------------------------------------------------
+
+ALERT_SELECT = """
+  select a.id, a.client_id, c.name as client_name, a.level, a.raised_at, a.acknowledged_by, a.acknowledged_at,
+         a.deadline_id
+  from caseward.deadline_alert a
+  join caseward.client c on c.id = a.client_id
+"""
+
+
+def alerts_out(call: Call, rows: list[dict]) -> list[dict]:
+    deadlines = deadlines_by_id(call, [r["deadline_id"] for r in rows])
+    return [{**{k: v for k, v in r.items() if k != "deadline_id"}, "deadline": deadlines[r["deadline_id"]]}
+            for r in rows]
+
+
+def list_deadline_alerts(call: Call) -> Result:
+    q = call.query
+    where, params = ["true"], []
+    state = q.get("state", "open")
+    if state != "all":
+        where.append("a.acknowledged_at is null" if state == "open" else "a.acknowledged_at is not null")
+    for name in ("client_id", "level"):
+        if name in q:
+            where.append(f"a.{name} = %s")
+            params.append(q[name])
+    cursor = decode_cursor(call)
+    if cursor:
+        where.append("(a.raised_at, a.id) < (%s::timestamptz, %s::uuid)")
+        params += cursor
+    rows = call.rows(ALERT_SELECT + f" where {' and '.join(where)} order by a.raised_at desc, a.id desc limit %s",
+                     params + [limit_plus_one(call)])
+    result = page(call, rows, ["raised_at", "id"])
+    result["items"] = alerts_out(call, result["items"])
+    return Result(200, result)
+
+
+def acknowledge_deadline_alert(call: Call) -> Result:
+    alert = call.row("select acknowledged_at from caseward.deadline_alert where id = %s", [call.path["id"]])
+    if alert is None:
+        raise not_found()
+    if alert["acknowledged_at"] is not None:
+        raise Problem(409, "already_acknowledged", "This alert has already been acknowledged")
+    call.conn.execute("update caseward.deadline_alert set acknowledged_by = %s, acknowledged_at = now() where id = %s",
+                      [call.principal.user_id, call.path["id"]])
+    row = call.row(ALERT_SELECT + " where a.id = %s", [call.path["id"]])
+    return Result(200, alerts_out(call, [row])[0])
+
+
 # -- Cases ------------------------------------------------------------------
 
 CASE_SORTS = {
@@ -273,12 +320,7 @@ def create_case(call: Call, client_id: UUID) -> Result:
             " values (%s, %s, 'note', %s, %s, %s)",
             [client_id, case_id, b["received_at"], b["description"], call.principal.user_id],
         )
-    # Deadlines are calculated by the worker from the live rules for this client.
-    call.conn.execute(
-        "insert into caseward.job (client_id, kind, payload, idempotency_key) values (%s, 'compute_deadlines', %s, %s)",
-        [client_id, Jsonb({"subject": {"kind": "case", "id": str(case_id)}, "event": "case_aware"}),
-         f"compute_deadlines:case:{case_id}:case_aware"],
-    )
+    # Recording case_aware queues deadline calculation (database trigger, 0003).
     row = call.row(CASE_SELECT.format(sort="null") + " where c.id = %s", [case_id])
     return Result(201, cases_out(call, [row])[0], headers={"Location": f"/cases/{case_id}"})
 

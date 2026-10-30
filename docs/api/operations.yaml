@@ -725,6 +725,61 @@ paths:
         '401': {$ref: 'common.yaml#/components/responses/Unauthorised'}
         '403': {$ref: 'common.yaml#/components/responses/Forbidden'}
 
+  /deadline-alerts:
+    get:
+      operationId: listDeadlineAlerts
+      tags: [Deadlines]
+      summary: Deadline alerts, newest first
+      x-roles: [case_handler, quality_analyst, compliance_lead]
+      x-audit: view
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/Cursor'
+        - $ref: 'common.yaml#/components/parameters/Limit'
+        - $ref: 'common.yaml#/components/parameters/ClientIdFilter'
+        - name: state
+          in: query
+          schema: {type: string, enum: [open, acknowledged, all], default: open}
+        - name: level
+          in: query
+          schema: {$ref: 'common.yaml#/components/schemas/DeadlineAlertLevel'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: 'common.yaml#/components/schemas/PageMeta'
+                  - type: object
+                    required: [items]
+                    properties:
+                      items:
+                        type: array
+                        items: {$ref: 'common.yaml#/components/schemas/DeadlineAlert'}
+        '401': {$ref: 'common.yaml#/components/responses/Unauthorised'}
+        '403': {$ref: 'common.yaml#/components/responses/Forbidden'}
+
+  /deadline-alerts/{id}/acknowledge:
+    post:
+      operationId: acknowledgeDeadlineAlert
+      tags: [Deadlines]
+      summary: Acknowledge an alert (it stays on the record)
+      description: Acknowledging does not change the deadline. A missed deadline stays missed.
+      x-roles: [case_handler, compliance_lead]
+      x-audit: write
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/Id'
+      responses:
+        '200':
+          description: Acknowledged
+          content:
+            application/json:
+              schema: {$ref: 'common.yaml#/components/schemas/DeadlineAlert'}
+        '401': {$ref: 'common.yaml#/components/responses/Unauthorised'}
+        '403': {$ref: 'common.yaml#/components/responses/Forbidden'}
+        '404': {$ref: 'common.yaml#/components/responses/NotFound'}
+        '409': {$ref: 'common.yaml#/components/responses/Conflict'}
+
   /deadlines/{id}/cancel:
     post:
       operationId: cancelDeadline

@@ -16,6 +16,8 @@ HANDLERS = {
     "createCase": create_case,
     "createCaseEvent": shared.create_case_event,
     "listDeadlines": shared.list_deadlines,
+    "listDeadlineAlerts": shared.list_deadline_alerts,
+    "acknowledgeDeadlineAlert": shared.acknowledge_deadline_alert,
     "listHazardCategories": lambda call: shared.list_hazard_categories(call, enabled_only=False),
     "listEventTypes": lambda call: shared.list_event_types(call, enabled_only=False),
 }

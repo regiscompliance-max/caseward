@@ -177,6 +177,7 @@ ENUM_COLUMNS = {
     "RuleStatus": ("deadline_rule", "status"),
     "DurationUnit": ("deadline_rule", "duration_unit"),
     "DayType": ("deadline_rule", "day_type"),
+    "DeadlineAlertLevel": ("deadline_alert", "level"),
 }
 INLINE_ENUMS = {
     ("RulePack", "status"): ("rule_pack", "status"),

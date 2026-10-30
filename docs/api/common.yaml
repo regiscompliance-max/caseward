@@ -247,6 +247,9 @@ components:
     AlertLevel:
       type: string
       enum: [on_track, alert_50, alert_80, overdue]
+    DeadlineAlertLevel:
+      type: string
+      enum: [alert_50, alert_80, overdue]
     LetterStatus:
       type: string
       enum: [drafting, draft_ready, approved, sent, void]
@@ -795,6 +798,24 @@ components:
           oneOf: [{$ref: '#/components/schemas/AlertLevel'}, {type: 'null'}]
           description: Null once completed or cancelled.
         elapsed_fraction: {type: [number, 'null']}
+
+    DeadlineAlert:
+      type: object
+      description: >
+        Raised once per level when a deadline reaches 50% or 80% of its time,
+        or is overdue. A late sweep raises only the highest level reached.
+      required: [id, client_id, level, raised_at, deadline]
+      properties:
+        id: {$ref: '#/components/schemas/Uuid'}
+        client_id: {$ref: '#/components/schemas/Uuid'}
+        client_name: {type: string}
+        level: {$ref: '#/components/schemas/DeadlineAlertLevel'}
+        raised_at: {$ref: '#/components/schemas/Timestamp'}
+        acknowledged_by:
+          oneOf: [{$ref: '#/components/schemas/Uuid'}, {type: 'null'}]
+        acknowledged_at:
+          oneOf: [{$ref: '#/components/schemas/Timestamp'}, {type: 'null'}]
+        deadline: {$ref: '#/components/schemas/Deadline'}
 
     DeadlineCancel:
       type: object

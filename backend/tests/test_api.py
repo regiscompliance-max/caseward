@@ -232,13 +232,13 @@ def test_create_and_view_a_case(landlord, admin_dsn, world):
     with psycopg.connect(admin_dsn) as admin:
         events = admin.execute("select kind from caseward.case_event where case_id = %s order by kind",
                                [case["id"]]).fetchall()
-        jobs = admin.execute("select kind from caseward.job where payload -> 'subject' ->> 'id' = %s",
-                             [case["id"]]).fetchall()
+        jobs = admin.execute("select payload ->> 'event' from caseward.job where kind = 'compute_deadlines'"
+                             " and payload -> 'subject' ->> 'id' = %s order by 1", [case["id"]]).fetchall()
         views = admin.execute("select actor_user_id, client_id from caseward.audit_event"
                               " where action = 'view' and entity_type = 'cases' and entity_id = %s",
                               [case["id"]]).fetchall()
     assert events == [("case_aware",), ("note",)]
-    assert jobs == [("compute_deadlines",)]
+    assert jobs == [("case_aware",), ("note",)]
     assert views == [(world.user_a, world.landlord_a)]
 
 
@@ -360,3 +360,30 @@ def test_responses_that_break_the_spec_are_caught(database, world):
             As(api, world, "user_a", "client").get("/me")
     finally:
         pool.close()
+
+
+def test_staff_see_and_acknowledge_deadline_alerts(handler, ops_api, app_conn, database, world, rule, calendar_ew):
+    from caseward.worker.runner import Worker
+    start = datetime.now(UTC) - timedelta(days=9)
+    with scoped_transaction(app_conn, world.a) as conn:
+        deadline = new_deadline(conn, world, rule, calendar_ew, new_case(conn, world), clock_started_at=start,
+                                due_at=start + timedelta(days=10))
+    pool = ConnectionPool(psycopg.conninfo.make_conninfo(database, user="cw_test_worker", password=PASSWORD),
+                          kwargs={"autocommit": True}, min_size=1, max_size=1, open=True)
+    try:
+        Worker(pool).sweep()
+    finally:
+        pool.close()
+
+    listed = handler.get("/deadline-alerts", params={"client_id": str(world.landlord_a), "limit": 100}).json()["items"]
+    [alert] = [a for a in listed if a["deadline"]["id"] == str(deadline)]
+    assert (alert["level"], alert["client_name"]) == ("alert_80", f"Landlord A {world.tag}")
+
+    problem(As(ops_api, world, "analyst", "operations").post(f"/deadline-alerts/{alert['id']}/acknowledge"),
+            403, "forbidden")
+    acknowledged = handler.post(f"/deadline-alerts/{alert['id']}/acknowledge")
+    assert acknowledged.status_code == 200, acknowledged.text
+    assert acknowledged.json()["acknowledged_by"] == str(world.caseworker)
+    problem(handler.post(f"/deadline-alerts/{alert['id']}/acknowledge"), 409, "already_acknowledged")
+    still_open = handler.get("/deadline-alerts", params={"client_id": str(world.landlord_a), "limit": 100}).json()
+    assert alert["id"] not in [a["id"] for a in still_open["items"]]

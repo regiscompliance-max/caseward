@@ -8,7 +8,7 @@ What I completed (with links to files or pull requests):
 - `docs/api/client.yaml`: client API, 37 operations. Portal, document
   intake (two-step upload to UK storage), simple case tracker, case events,
   deadlines, approved letters, exports, special-category endpoints.
-- `docs/api/operations.yaml`: operations API, 78 operations. Work queue with
+- `docs/api/operations.yaml`: operations API, 78 operations (80 after the alert endpoints were added). Work queue with
   claim-next, side-by-side document viewer as page images, extraction
   review, cases, deadline cancellation, letter drafting, editing, approval
   and sending, quality sampling and scoring, administration, configuration
