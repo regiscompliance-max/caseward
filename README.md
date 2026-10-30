@@ -96,3 +96,13 @@ npm run typecheck && npm test   # unit and component tests
 npm run e2e                     # browser tests against a mocked API, with axe accessibility scans
 npm run gen:api                 # regenerate API types after changing docs/api/operations.yaml
 ```
+
+## Public preview (Cloudflare)
+
+`site/` holds a static walkthrough of the operations console: screenshots of
+**synthetic data only**. `wrangler.jsonc` deploys it with `npx wrangler deploy`
+(Cloudflare Workers Builds runs this from the repository root). The `name` in
+`wrangler.jsonc` must match the Worker's name in the Cloudflare dashboard.
+
+Caseward itself (console, APIs, database, documents) is not deployed to
+Cloudflare: client data must be stored and processed in the UK.
