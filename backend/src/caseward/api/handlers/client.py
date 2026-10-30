@@ -1,0 +1,50 @@
+"""Client API handlers. Operations not listed here return 501."""
+
+from caseward.api.framework import Call, Result
+from caseward.api.handlers import (certificates, configuration, documents, exports, letters, reports, shared, tenants,
+                                   updates)
+
+
+def create_case(call: Call) -> Result:
+    return shared.create_case(call, call.ctx.client_id)
+
+
+HANDLERS = {
+    "getMe": shared.get_me,
+    "listProperties": shared.list_properties,
+    "getProperty": shared.get_property,
+    "createProperty": shared.create_property,
+    "listCases": shared.list_cases,
+    "getCase": shared.get_case,
+    "createCase": create_case,
+    "createCaseEvent": shared.create_case_event,
+    "listDeadlines": shared.list_deadlines,
+    "listHazardCategories": lambda call: shared.list_hazard_categories(call, enabled_only=True),
+    "listEventTypes": lambda call: shared.list_event_types(call, enabled_only=True, subject_kind="case"),
+    "createUpload": documents.create_upload,
+    "createDocument": lambda call: documents.create_document(call, default_source="upload"),
+    "listDocuments": documents.list_documents,
+    "getDocument": documents.get_document,
+    "downloadDocument": documents.download_document,
+    "listInspections": certificates.list_inspections,
+    "getInspection": certificates.get_inspection,
+    "listDefects": certificates.list_defects,
+    "getDefect": certificates.get_defect,
+    "listLetters": letters.list_approved_letters,
+    "getLetter": letters.get_approved_letter,
+    "getDashboard": reports.get_dashboard,
+    "getCaseTimeline": reports.get_case_timeline,
+    "listCertificateTypes": configuration.client_certificate_types,
+    "listTenancies": tenants.list_tenancies,
+    "createTenancy": tenants.create_tenancy,
+    "createTenantContact": tenants.create_tenant_contact,
+    "updateTenantContact": tenants.update_tenant_contact,
+    "listVulnerabilities": tenants.list_vulnerabilities,
+    "createVulnerability": tenants.create_vulnerability,
+    "endVulnerability": tenants.end_vulnerability,
+    "updateCase": updates.update_case,
+    "updateDefect": updates.update_defect,
+    "createExport": exports.create_export,
+    "getExport": exports.get_export,
+    "downloadExport": exports.download_export,
+}

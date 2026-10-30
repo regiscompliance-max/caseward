@@ -1,0 +1,30 @@
+{
+  "$comment": "UNVERIFIED draft. Field list to be confirmed by the compliance expert.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["address_line_1", "postcode", "uprn", "inspection_date", "next_inspection_due", "outcome",
+               "engineer_name", "engineer_registration", "defects"],
+  "properties": {
+    "address_line_1": {"type": ["string", "null"]},
+    "postcode": {"type": ["string", "null"]},
+    "uprn": {"type": ["string", "null"], "pattern": "^[0-9]{1,12}$"},
+    "inspection_date": {"type": ["string", "null"], "format": "date"},
+    "next_inspection_due": {"type": ["string", "null"], "format": "date"},
+    "outcome": {"enum": ["satisfactory", "unsatisfactory", null]},
+    "engineer_name": {"type": ["string", "null"]},
+    "engineer_registration": {"type": ["string", "null"]},
+    "defects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "description", "location"],
+        "properties": {
+          "code": {"enum": ["C1", "C2", "C3", "FI"]},
+          "description": {"type": "string"},
+          "location": {"type": ["string", "null"]}
+        }
+      }
+    }
+  }
+}
