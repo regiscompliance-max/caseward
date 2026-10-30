@@ -7,6 +7,7 @@ Start here:
 
 - [docs/BRIEF.md](docs/BRIEF.md): master brief (every role reads this first)
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): components, security boundaries, data model
+- [docs/api/](docs/api/): API specification and conventions
 - [docs/decisions/](docs/decisions/): decision records
 - [docs/handoffs/](docs/handoffs/): hand-off notes, newest last
 
@@ -24,3 +25,20 @@ pytest
 
 The tests connect as non-superuser roles, because superusers bypass
 row-level security.
+
+### Running the APIs
+
+Apply `backend/db/migrations/*.sql` in order. Then run each API with its own
+database login: a member of `caseward_app` for the client API, and of
+`caseward_app` plus `caseward_staff` for the operations API.
+
+```sh
+export CASEWARD_OIDC_ISSUER=https://your-idp/ CASEWARD_OIDC_JWKS_URL=https://your-idp/.well-known/jwks.json
+export CASEWARD_CLIENT_DATABASE_URL=postgresql://client_api@db/caseward CASEWARD_CLIENT_OIDC_AUDIENCE=caseward-client
+export CASEWARD_OPS_DATABASE_URL=postgresql://ops_api@db/caseward CASEWARD_OPS_OIDC_AUDIENCE=caseward-ops
+uvicorn caseward.api.main:client_app --factory --port 8000
+uvicorn caseward.api.main:operations_app --factory --port 8001
+```
+
+Set `CASEWARD_VALIDATE_RESPONSES=1` in development to check every response
+against the spec.

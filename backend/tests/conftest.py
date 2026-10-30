@@ -96,6 +96,11 @@ class World:
     tenancy_a: uuid.UUID
     contact_a: uuid.UUID
     staff_ctx: RequestContext
+    tag: str = ""
+
+    def subject(self, name):
+        """Identity provider subject for a seeded user, e.g. 'user_a' or 'case_handler'."""
+        return f"{name}-{self.tag}"
 
     def ctx(self, client_id, user_id):
         return RequestContext(actor_kind="user", client_id=client_id, user_id=user_id, request_id="req-test")
@@ -160,6 +165,7 @@ def world(staff_conn):
         landlord_a=a, landlord_b=b, contractor_c=c, caseworker=caseworker, reviewer=reviewer,
         compliance_lead=lead, property_a=prop_a, property_b=prop_b, tenancy_a=tenancy, contact_a=contact,
         staff_ctx=RequestContext(actor_kind="user", user_id=caseworker, request_id="req-staff"),
+        tag=tag,
         **ids,
     )
 
