@@ -13,6 +13,7 @@ from typing import Literal
 from uuid import UUID
 
 import psycopg
+from psycopg.types.json import Jsonb
 
 ActorKind = Literal["user", "worker", "system"]
 
@@ -50,3 +51,23 @@ def scoped_transaction(conn: psycopg.Connection, ctx: RequestContext) -> Iterato
             ],
         )
         yield conn
+
+
+def record_access(
+    conn: psycopg.Connection,
+    ctx: RequestContext,
+    action: Literal["view", "export", "download"],
+    entity_type: str,
+    entity_id: str,
+    detail: dict | None = None,
+) -> None:
+    """Audit a read. Writes are audited by database triggers; views and exports must call this."""
+    conn.execute(
+        """
+        insert into caseward.audit_event
+          (actor_user_id, actor_kind, client_id, action, entity_type, entity_id, request_id, source_ip, after)
+        values (%s, %s, %s, %s, %s, %s, nullif(%s, ''), nullif(%s, '')::inet, %s)
+        """,
+        [ctx.user_id, ctx.actor_kind, ctx.client_id, action, entity_type, entity_id,
+         ctx.request_id or "", ctx.source_ip or "", Jsonb(detail) if detail else None],
+    )

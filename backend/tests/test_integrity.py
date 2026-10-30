@@ -6,58 +6,8 @@ import pytest
 
 from caseward.bank_holidays import load_calendar, publish_calendar
 from caseward.db import RequestContext, scoped_transaction
-from caseward.deadlines import CALCULATOR_VERSION, DeadlineRule, compute_due_at
-from conftest import insert
-
-UK_CLOCK_START = datetime.fromisoformat("2026-12-23T15:00:00+00:00")
-
-
-def new_rule(conn, world, *, approved=True, **overrides):
-    values = dict(
-        rule_key=f"test.case.{uuid.uuid4().hex[:8]}", version=1, title="Test rule", description="For tests",
-        jurisdiction="england", subject_kind="case", applies_to="significant", trigger_event="case_aware",
-        duration=10, duration_unit="days", day_type="working", authored_by=world.caseworker,
-    )
-    if approved:
-        values.update(status="approved", approved_by=world.compliance_lead, approved_at=datetime.now().astimezone(),
-                      effective_from="2025-01-01")
-    values.update(overrides)
-    insert(conn, "deadline_rule", **values)
-    return values["rule_key"], values["version"]
-
-
-def new_case(conn, world, severity="significant"):
-    return insert(conn, "hazard_case", client_id=world.landlord_a, property_id=world.property_a,
-                  reference=f"HC-{uuid.uuid4().hex[:6]}", hazard_category="damp_and_mould_growth",
-                  severity=severity, received_at=UK_CLOCK_START, aware_at=UK_CLOCK_START,
-                  awareness_source="tenant_report")
-
-
-@pytest.fixture
-def calendar_ew(staff_conn, world):
-    with scoped_transaction(staff_conn, world.staff_ctx) as conn:
-        return publish_calendar(conn, "england-and-wales", [
-            (datetime(2026, 12, 25).date(), "Christmas Day"),
-            (datetime(2026, 12, 28).date(), "Boxing Day (substitute day)"),
-            (datetime(2027, 1, 1).date(), "New Year's Day"),
-        ], source="test")
-
-
-@pytest.fixture
-def rule(staff_conn, world):
-    with scoped_transaction(staff_conn, world.staff_ctx) as conn:
-        return new_rule(conn, world)
-
-
-def new_deadline(conn, world, rule, calendar_id, case_id, **overrides):
-    holidays = load_calendar(conn, calendar_id)
-    due = compute_due_at(DeadlineRule(rule[0], rule[1], 10, "days", "working"), UK_CLOCK_START, holidays)
-    values = dict(client_id=world.landlord_a, case_id=case_id, rule_key=rule[0], rule_version=rule[1],
-                  clock_started_at=UK_CLOCK_START, holiday_calendar_id=calendar_id, due_at=due,
-                  calculator_version=CALCULATOR_VERSION)
-    values.update(overrides)
-    return insert(conn, "deadline", **values)
-
+from caseward.deadlines import DeadlineRule, compute_due_at
+from conftest import insert, new_case, new_deadline, new_rule
 
 # Deadline rules ------------------------------------------------------------
 
@@ -187,7 +137,7 @@ def new_letter(conn, staff_conn, world):
         template = insert(sconn, "letter_template", template_key=f"t-{uuid.uuid4().hex[:6]}", version=1,
                           title="Investigation notice", body="Dear {{name}}", status="approved",
                           approved_by=world.compliance_lead, approved_at=datetime.now().astimezone())
-    letter = insert(conn, "letter", client_id=world.landlord_a, template_id=template,
+    letter = insert(conn, "letter", client_id=world.landlord_a, template_id=template, recipient_kind="tenant",
                     recipient_contact_id=world.contact_a, channel="post")
     conn.execute(
         "insert into caseward.letter_version (letter_id, client_id, version, body, origin, model_provider,"
@@ -277,7 +227,8 @@ def test_changes_are_audited_with_actor_and_request(app_conn, world):
     ctx = RequestContext(actor_kind="user", client_id=world.landlord_a, user_id=world.user_a,
                          request_id="req-123", source_ip="203.0.113.7")
     with scoped_transaction(app_conn, ctx) as conn:
-        defect = insert(conn, "defect", client_id=world.landlord_a, property_id=world.property_a, code="C1",
+        defect = insert(conn, "defect", client_id=world.landlord_a, property_id=world.property_a,
+                        code_scheme="eicr", code="C1",
                         description="Exposed live conductors", identified_on="2026-10-01")
         event = conn.execute(
             "select actor_user_id, actor_kind, action, request_id, host(source_ip), after ->> 'code'"

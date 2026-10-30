@@ -39,7 +39,7 @@ def test_ended_engagement_revokes_contractor_access(app_conn, staff_conn, world)
     with scoped_transaction(staff_conn, world.staff_ctx) as conn:
         conn.execute(
             "update caseward.engagement set starts_on = current_date - 10, ends_on = current_date - 1"
-            " where contractor_client_id = %s",
+            " where provider_client_id = %s",
             [world.contractor_c],
         )
     assert world.property_a not in ids(app_conn, world.c, "select id from caseward.property")
@@ -62,7 +62,7 @@ def test_cannot_move_a_row_to_another_client(app_conn, world):
 def test_cross_client_links_are_rejected_even_for_staff(staff_conn, world):
     with pytest.raises(psycopg.errors.ForeignKeyViolation):
         with scoped_transaction(staff_conn, world.staff_ctx) as conn:
-            insert(conn, "defect", client_id=world.landlord_a, property_id=world.property_b, code="C2",
+            insert(conn, "defect", client_id=world.landlord_a, property_id=world.property_b, code_scheme="eicr", code="C2",
                    description="Damaged socket", identified_on="2026-10-01")
 
 

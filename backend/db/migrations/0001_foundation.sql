@@ -52,9 +52,11 @@ language sql stable as $$
   select nullif(current_setting('app.user_id', true), '')::uuid
 $$;
 
+-- Uses the login role, so the answer is the same inside security definer
+-- functions and cannot be changed with SET ROLE.
 create function caseward.is_staff() returns boolean
 language sql stable as $$
-  select pg_has_role('caseward_staff', 'MEMBER')
+  select pg_has_role(session_user, 'caseward_staff', 'MEMBER')
 $$;
 
 -- ---------------------------------------------------------------------------
@@ -64,31 +66,31 @@ $$;
 create table caseward.client (
   id          uuid primary key default gen_random_uuid(),
   name        text not null check (length(trim(name)) > 0),
-  kind        text not null check (kind in ('landlord', 'contractor')),
+  kind        text not null check (kind in ('landlord', 'contractor', 'managing_agent', 'legal')),
   created_at  timestamptz not null default now()
 );
 
--- A contractor working for a landlord. Grants the contractor access to the
--- landlord's properties, documents, defects and cases (not tenant contacts
--- or letters) while the engagement is current.
+-- A contractor, managing agent or legal team acting for a landlord. Grants
+-- the provider access to the landlord's properties, documents, defects and
+-- cases (not tenant data or letters) while the engagement is current.
 create table caseward.engagement (
-  id                    uuid primary key default gen_random_uuid(),
-  landlord_client_id    uuid not null references caseward.client (id),
-  contractor_client_id  uuid not null references caseward.client (id),
-  starts_on             date not null default current_date,
-  ends_on               date,
-  created_at            timestamptz not null default now(),
-  check (landlord_client_id <> contractor_client_id),
+  id                  uuid primary key default gen_random_uuid(),
+  landlord_client_id  uuid not null references caseward.client (id),
+  provider_client_id  uuid not null references caseward.client (id),
+  starts_on           date not null default current_date,
+  ends_on             date,
+  created_at          timestamptz not null default now(),
+  check (landlord_client_id <> provider_client_id),
   check (ends_on is null or ends_on >= starts_on)
 );
-create index on caseward.engagement (contractor_client_id, landlord_client_id);
+create index on caseward.engagement (provider_client_id, landlord_client_id);
 
 create table caseward.app_user (
   id            uuid primary key default gen_random_uuid(),
   idp_subject   text not null unique,
   email         text not null,
   display_name  text not null,
-  staff_role    text check (staff_role in ('caseworker', 'quality_reviewer', 'compliance_lead', 'admin')),
+  staff_role    text check (staff_role in ('case_handler', 'quality_analyst', 'compliance_lead', 'admin')),
   is_active     boolean not null default true,
   created_at    timestamptz not null default now()
 );
@@ -98,8 +100,74 @@ create table caseward.membership (
   user_id     uuid not null references caseward.app_user (id),
   client_id   uuid not null references caseward.client (id),
   role        text not null check (role in ('client_admin', 'client_member', 'client_viewer')),
+  -- Household vulnerability details are special-category data.
+  special_category_access  boolean not null default false,
   created_at  timestamptz not null default now(),
   primary key (user_id, client_id)
+);
+
+-- ---------------------------------------------------------------------------
+-- Rule packs and sector configuration
+-- ---------------------------------------------------------------------------
+
+-- Everything sector-specific (certificate types, defect codes, hazard
+-- categories, event types, deadline rules, letter templates) belongs to a
+-- rule pack, so a new sector is added as configuration, not code. A pack goes
+-- live only with a compliance lead's approval, and only for clients it has
+-- been enabled for.
+create table caseward.rule_pack (
+  code         text primary key check (code ~ '^[a-z0-9_]+$'),
+  name         text not null,
+  status       text not null default 'off' check (status in ('off', 'live')),
+  approved_by  uuid references caseward.app_user (id),
+  approved_at  timestamptz,
+  created_at   timestamptz not null default now(),
+  check (status = 'off' or (approved_by is not null and approved_at is not null))
+);
+
+create table caseward.client_rule_pack (
+  client_id     uuid not null references caseward.client (id),
+  rule_pack     text not null references caseward.rule_pack (code),
+  enabled_from  date not null,
+  enabled_to    date,
+  created_at    timestamptz not null default now(),
+  primary key (client_id, rule_pack, enabled_from),
+  check (enabled_to is null or enabled_to > enabled_from)
+);
+
+create table caseward.certificate_type (
+  code       text primary key check (code ~ '^[a-z0-9_]+$'),
+  rule_pack  text not null references caseward.rule_pack (code),
+  name       text not null
+);
+
+-- scheme is a certificate type code, or 'general' for defects not tied to one.
+create table caseward.defect_code (
+  scheme     text not null,
+  code       text not null,
+  name       text not null,
+  rule_pack  text not null references caseward.rule_pack (code),
+  primary key (scheme, code)
+);
+
+-- Things that happen to a case, defect or inspection. Deadline rules start
+-- and stop on these, and the case timeline is built from them.
+create table caseward.event_type (
+  code                text not null check (code ~ '^[a-z0-9_]+$'),
+  subject_kind        text not null check (subject_kind in ('case', 'defect', 'inspection')),
+  name                text not null,
+  -- Can support a reasonable excuse defence (access refused, supply delay...).
+  is_excuse_evidence  boolean not null default false,
+  -- Null for core event types used by every pack.
+  rule_pack           text references caseward.rule_pack (code),
+  primary key (code, subject_kind)
+);
+
+-- Defined by the compliance expert; none are seeded.
+create table caseward.vulnerability_factor_type (
+  code       text primary key check (code ~ '^[a-z0-9_]+$'),
+  name       text not null,
+  rule_pack  text not null references caseward.rule_pack (code)
 );
 
 -- ---------------------------------------------------------------------------
@@ -148,6 +216,24 @@ create table caseward.tenant_contact (
   foreign key (tenancy_id, client_id) references caseward.tenancy (id, client_id)
 );
 
+-- Special-category data. The API cannot select from this table: reads go
+-- through caseward.read_household_vulnerabilities(), which checks access and
+-- writes an audit event for every read.
+create table caseward.household_vulnerability (
+  id           uuid primary key default gen_random_uuid(),
+  client_id    uuid not null,
+  tenancy_id   uuid not null,
+  factor       text not null references caseward.vulnerability_factor_type (code),
+  notes        text,
+  source       text not null check (source in ('tenant', 'support_worker', 'landlord_record', 'other')),
+  recorded_by  uuid not null references caseward.app_user (id),
+  recorded_at  timestamptz not null default now(),
+  ended_at     timestamptz,
+  retain_until date,
+  legal_hold   boolean not null default false,
+  foreign key (tenancy_id, client_id) references caseward.tenancy (id, client_id)
+);
+
 -- ---------------------------------------------------------------------------
 -- Documents, OCR and extraction
 -- ---------------------------------------------------------------------------
@@ -157,8 +243,9 @@ create table caseward.document (
   client_id          uuid not null references caseward.client (id),
   property_id        uuid,
   doc_type           text not null check (doc_type in (
-                       'eicr', 'gas_safety_record', 'damp_mould_report', 'tenant_report',
-                       'contractor_report', 'photo', 'correspondence', 'other')),
+                       'certificate', 'hazard_report', 'contractor_report', 'photo', 'correspondence', 'other')),
+  -- Known at upload or set once the extraction is approved.
+  certificate_type   text references caseward.certificate_type (code),
   source             text not null check (source in ('upload', 'email', 'portal', 'api')),
   received_at        timestamptz not null,
   storage_key        text not null unique,
@@ -173,7 +260,8 @@ create table caseward.document (
   created_at         timestamptz not null default now(),
   unique (id, client_id),
   unique (client_id, sha256),
-  foreign key (property_id, client_id) references caseward.property (id, client_id)
+  foreign key (property_id, client_id) references caseward.property (id, client_id),
+  check (certificate_type is null or doc_type = 'certificate')
 );
 
 create table caseward.ocr_output (
@@ -238,7 +326,7 @@ create table caseward.inspection (
   property_id            uuid not null,
   document_id            uuid,
   extraction_review_id   uuid,
-  kind                   text not null check (kind in ('eicr', 'gas_safety')),
+  certificate_type       text not null references caseward.certificate_type (code),
   inspected_on           date not null,
   next_due_on            date,
   engineer_name          text,
@@ -258,7 +346,8 @@ create table caseward.defect (
   property_id    uuid not null,
   inspection_id  uuid,
   document_id    uuid,
-  code           text not null check (code in ('C1', 'C2', 'C3', 'FI', 'ID', 'AR', 'NCS', 'Other')),
+  code_scheme    text not null,
+  code           text not null,
   description    text not null,
   location       text,
   status         text not null default 'open' check (status in (
@@ -269,14 +358,20 @@ create table caseward.defect (
   unique (id, client_id),
   foreign key (property_id, client_id) references caseward.property (id, client_id),
   foreign key (inspection_id, client_id) references caseward.inspection (id, client_id),
-  foreign key (document_id, client_id) references caseward.document (id, client_id)
+  foreign key (document_id, client_id) references caseward.document (id, client_id),
+  foreign key (code_scheme, code) references caseward.defect_code (scheme, code)
 );
 create index on caseward.defect (client_id, status);
 
+-- phase and in_scope_from are legal configuration: left unset until the
+-- compliance expert drafts them and a qualified person confirms them.
 create table caseward.hazard_category (
-  code    text primary key,
-  name    text not null,
-  scheme  text not null default 'hhsrs'
+  code           text primary key,
+  name           text not null,
+  scheme         text not null default 'hhsrs',
+  rule_pack      text not null references caseward.rule_pack (code),
+  phase          smallint check (phase > 0),
+  in_scope_from  date
 );
 
 create table caseward.hazard_case (
@@ -292,6 +387,8 @@ create table caseward.hazard_case (
   awareness_source                text not null check (awareness_source in (
                                     'tenant_report', 'inspection', 'contractor', 'third_party', 'other')),
   awareness_evidence_document_id  uuid,
+  -- For deadline performance reporting by contractor.
+  assigned_contractor_id          uuid references caseward.client (id),
   status                          text not null default 'open' check (status in (
                                     'open', 'investigating', 'awaiting_works', 'works_in_progress',
                                     'resolved', 'closed', 'withdrawn')),
@@ -325,6 +422,30 @@ create table caseward.case_status_change (
   foreign key (case_id, client_id) references caseward.hazard_case (id, client_id)
 );
 
+-- The case timeline: investigations, written summaries, works, access
+-- attempts, refusals, missed appointments, supply delays, alternative
+-- accommodation. Append-only evidence; a mistake is fixed by a new event that
+-- names the one it corrects.
+create table caseward.case_event (
+  id                    uuid primary key default gen_random_uuid(),
+  client_id             uuid not null,
+  case_id               uuid not null,
+  kind                  text not null,
+  subject_kind          text not null default 'case' check (subject_kind = 'case'),
+  occurred_at           timestamptz not null,
+  channel               text check (channel in ('phone', 'email', 'letter', 'in_person', 'portal', 'other')),
+  notes                 text,
+  evidence_document_id  uuid,
+  contractor_client_id  uuid references caseward.client (id),
+  corrects_event_id     uuid references caseward.case_event (id),
+  recorded_by           uuid references caseward.app_user (id),
+  recorded_at           timestamptz not null default now(),
+  foreign key (kind, subject_kind) references caseward.event_type (code, subject_kind),
+  foreign key (case_id, client_id) references caseward.hazard_case (id, client_id),
+  foreign key (evidence_document_id, client_id) references caseward.document (id, client_id)
+);
+create index on caseward.case_event (case_id, occurred_at);
+
 -- ---------------------------------------------------------------------------
 -- Deadlines
 -- ---------------------------------------------------------------------------
@@ -351,6 +472,7 @@ create table caseward.bank_holiday (
 -- hard-codes a legal timescale.
 create table caseward.deadline_rule (
   id              uuid primary key default gen_random_uuid(),
+  rule_pack       text not null references caseward.rule_pack (code),
   rule_key        text not null check (rule_key ~ '^[a-z0-9_.-]+$'),
   version         integer not null check (version > 0),
   title           text not null,
@@ -358,10 +480,12 @@ create table caseward.deadline_rule (
   legal_reference text,
   jurisdiction    text not null check (jurisdiction in ('england', 'wales', 'scotland', 'northern_ireland')),
   subject_kind    text not null check (subject_kind in ('case', 'defect', 'inspection')),
-  -- Case severity, defect code or inspection kind this rule applies to.
+  -- Case severity, defect 'scheme:code' (e.g. 'eicr:C1') or certificate
+  -- type this rule applies to; '*' for any.
   applies_to      text not null,
-  trigger_event   text not null check (trigger_event in (
-                    'case_aware', 'investigation_completed', 'defect_identified', 'inspection_completed')),
+  -- The event that starts the clock, and the event that meets the deadline.
+  trigger_event     text not null,
+  completion_event  text not null,
   duration        integer not null check (duration > 0),
   duration_unit   text not null check (duration_unit in ('hours', 'days', 'months')),
   day_type        text check (day_type in ('working', 'calendar')),
@@ -373,6 +497,9 @@ create table caseward.deadline_rule (
   effective_to    date,
   created_at      timestamptz not null default now(),
   unique (rule_key, version),
+  foreign key (trigger_event, subject_kind) references caseward.event_type (code, subject_kind),
+  foreign key (completion_event, subject_kind) references caseward.event_type (code, subject_kind),
+  check (trigger_event <> completion_event),
   check ((duration_unit = 'days') = (day_type is not null)),
   check (status = 'draft' or (approved_by is not null and approved_at is not null and effective_from is not null)),
   check (approved_by is null or approved_by <> authored_by),
@@ -415,7 +542,10 @@ create index on caseward.deadline (client_id, status, due_at);
 create table caseward.letter_template (
   id            uuid primary key default gen_random_uuid(),
   client_id     uuid references caseward.client (id),
+  rule_pack     text references caseward.rule_pack (code),
   template_key  text not null,
+  language      text not null default 'en-GB',
+  variant       text not null default 'standard' check (variant in ('standard', 'large_print', 'easy_read')),
   version       integer not null check (version > 0),
   title         text not null,
   body          text not null,
@@ -423,7 +553,7 @@ create table caseward.letter_template (
   approved_by   uuid references caseward.app_user (id),
   approved_at   timestamptz,
   created_at    timestamptz not null default now(),
-  unique nulls not distinct (client_id, template_key, version),
+  unique nulls not distinct (client_id, template_key, language, variant, version),
   check (status = 'draft' or (approved_by is not null and approved_at is not null))
 );
 
@@ -432,7 +562,9 @@ create table caseward.letter (
   client_id                      uuid not null,
   case_id                        uuid,
   template_id                    uuid not null references caseward.letter_template (id),
+  recipient_kind                 text not null check (recipient_kind in ('tenant', 'contractor')),
   recipient_contact_id           uuid,
+  recipient_client_id            uuid references caseward.client (id),
   channel                        text not null check (channel in ('post', 'email', 'portal')),
   status                         text not null default 'drafting' check (status in (
                                    'drafting', 'draft_ready', 'approved', 'sent', 'void')),
@@ -447,7 +579,9 @@ create table caseward.letter (
   foreign key (recipient_contact_id, client_id) references caseward.tenant_contact (id, client_id),
   foreign key (delivery_evidence_document_id, client_id) references caseward.document (id, client_id),
   check (status not in ('approved', 'sent') or (approved_version is not null and approved_by is not null and approved_at is not null)),
-  check (status <> 'sent' or sent_at is not null)
+  check (status <> 'sent' or sent_at is not null),
+  check ((recipient_kind = 'tenant') = (recipient_contact_id is not null)),
+  check ((recipient_kind = 'contractor') = (recipient_client_id is not null))
 );
 
 -- Append-only. The approved text is the body of letter.approved_version.
@@ -583,7 +717,7 @@ language sql stable as $$
       or exists (
            select 1
            from caseward.engagement e
-           where e.contractor_client_id = caseward.current_client_id()
+           where e.provider_client_id = caseward.current_client_id()
              and e.landlord_client_id = target
              and e.starts_on <= current_date
              and (e.ends_on is null or e.ends_on >= current_date))
@@ -780,6 +914,16 @@ begin
     if r.status <> 'approved' then
       raise exception 'deadline rule %.v% is % and cannot create deadlines', r.rule_key, r.version, r.status;
     end if;
+    if not exists (select 1 from caseward.rule_pack where code = r.rule_pack and status = 'live') then
+      raise exception 'rule pack % is not live', r.rule_pack;
+    end if;
+    if not exists (
+         select 1 from caseward.client_rule_pack c
+         where c.client_id = new.client_id and c.rule_pack = r.rule_pack
+           and (new.clock_started_at at time zone 'Europe/London')::date >= c.enabled_from
+           and (c.enabled_to is null or (new.clock_started_at at time zone 'Europe/London')::date < c.enabled_to)) then
+      raise exception 'rule pack % is not enabled for this client at %', r.rule_pack, new.clock_started_at;
+    end if;
     if (new.clock_started_at at time zone 'Europe/London')::date
        not between r.effective_from and coalesce(r.effective_to - 1, 'infinity'::date) then
       raise exception 'deadline rule %.v% is not effective at %', r.rule_key, r.version, new.clock_started_at;
@@ -790,11 +934,13 @@ begin
       from caseward.hazard_case c join caseward.property p on p.id = c.property_id
       where c.id = new.case_id;
     elsif new.defect_id is not null then
-      select 'defect', d.code, p.jurisdiction into subject_kind, subject_applies_to, property_jurisdiction
+      select 'defect', d.code_scheme || ':' || d.code, p.jurisdiction
+      into subject_kind, subject_applies_to, property_jurisdiction
       from caseward.defect d join caseward.property p on p.id = d.property_id
       where d.id = new.defect_id;
     else
-      select 'inspection', i.kind, p.jurisdiction into subject_kind, subject_applies_to, property_jurisdiction
+      select 'inspection', i.certificate_type, p.jurisdiction
+      into subject_kind, subject_applies_to, property_jurisdiction
       from caseward.inspection i join caseward.property p on p.id = i.property_id
       where i.id = new.inspection_id;
     end if;
@@ -831,6 +977,36 @@ begin
     raise exception 'deadline % is not yet due', new.id;
   end if;
   return new;
+end $$;
+
+create function caseward.rule_pack_guard() returns trigger
+language plpgsql as $$
+begin
+  if new.status = 'live' and not exists (
+       select 1 from caseward.app_user u
+       where u.id = new.approved_by and u.staff_role = 'compliance_lead' and u.is_active) then
+    raise exception 'rule packs must be switched on by an active compliance lead';
+  end if;
+  return new;
+end $$;
+
+-- A case event that is a rule's completion event meets the case's open
+-- deadlines under that rule.
+create function caseward.complete_case_deadlines() returns trigger
+language plpgsql as $$
+begin
+  if new.corrects_event_id is null then
+    update caseward.deadline d
+    set completed_at = new.occurred_at
+    from caseward.deadline_rule r
+    where d.case_id = new.case_id
+      and d.completed_at is null
+      and d.status in ('open', 'missed')
+      and (r.rule_key, r.version) = (d.rule_key, d.rule_version)
+      and r.completion_event = new.kind
+      and new.occurred_at >= d.clock_started_at;
+  end if;
+  return null;
 end $$;
 
 -- Approval is a separate human step: once recorded it cannot change, and the
@@ -871,6 +1047,73 @@ begin
     raise exception 'reviewer cannot quality review their own task';
   end if;
   return new;
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- Special-category data access
+-- ---------------------------------------------------------------------------
+
+-- Case handlers and compliance leads, or client users explicitly granted access
+-- for their own client. Quality analysts and contractors never qualify.
+create function caseward.can_view_special_category(target uuid) returns boolean
+language sql stable security definer
+set search_path = caseward, pg_catalog
+as $$
+  select exists (
+    select 1 from caseward.app_user u
+    where u.id = caseward.current_user_id() and u.is_active
+      and ((caseward.is_staff() and u.staff_role in ('case_handler', 'compliance_lead'))
+           or exists (select 1 from caseward.membership m
+                      where m.user_id = u.id and m.client_id = target
+                        and target = caseward.current_client_id()
+                        and m.special_category_access)))
+$$;
+
+create function caseward.read_household_vulnerabilities(p_tenancy_id uuid, p_reason text)
+returns table (id uuid, factor text, factor_name text, notes text, source text,
+               recorded_at timestamptz, ended_at timestamptz)
+language plpgsql security definer
+set search_path = caseward, pg_catalog
+as $$
+declare
+  owner_client uuid;
+begin
+  select t.client_id into owner_client from caseward.tenancy t where t.id = p_tenancy_id;
+  if owner_client is null or not caseward.can_view_special_category(owner_client) then
+    raise exception 'not authorised to view household vulnerability data'
+      using errcode = 'insufficient_privilege';
+  end if;
+  if coalesce(trim(p_reason), '') = '' then
+    raise exception 'a reason is required to view household vulnerability data';
+  end if;
+
+  insert into caseward.audit_event (actor_user_id, actor_kind, client_id, action, entity_type, entity_id,
+                                    request_id, source_ip, after)
+  values (caseward.current_user_id(), 'user', owner_client, 'view', 'household_vulnerability',
+          p_tenancy_id::text, nullif(current_setting('app.request_id', true), ''),
+          nullif(current_setting('app.source_ip', true), '')::inet, jsonb_build_object('reason', p_reason));
+
+  return query
+    select v.id, v.factor, f.name, v.notes, v.source, v.recorded_at, v.ended_at
+    from caseward.household_vulnerability v
+    join caseward.vulnerability_factor_type f on f.code = v.factor
+    where v.tenancy_id = p_tenancy_id
+    order by v.recorded_at;
+end $$;
+
+create function caseward.end_household_vulnerability(p_id uuid) returns void
+language plpgsql security definer
+set search_path = caseward, pg_catalog
+as $$
+declare
+  owner_client uuid;
+begin
+  select client_id into owner_client from caseward.household_vulnerability where id = p_id;
+  if owner_client is null or not caseward.can_view_special_category(owner_client) then
+    raise exception 'not authorised to change household vulnerability data'
+      using errcode = 'insufficient_privilege';
+  end if;
+  update caseward.household_vulnerability set ended_at = now() where id = p_id and ended_at is null;
 end $$;
 
 -- ---------------------------------------------------------------------------
@@ -943,6 +1186,12 @@ create trigger guard before insert or update on caseward.quality_review
   for each row execute function caseward.quality_review_guard();
 create trigger log_status after insert or update of status on caseward.hazard_case
   for each row execute function caseward.log_case_status();
+create trigger guard before insert or update on caseward.rule_pack
+  for each row execute function caseward.rule_pack_guard();
+create trigger append_only before update or delete on caseward.case_event
+  for each row execute function caseward.forbid_mutation();
+create trigger complete_deadlines after insert on caseward.case_event
+  for each row execute function caseward.complete_case_deadlines();
 
 do $$
 declare
@@ -952,14 +1201,15 @@ begin
     'client', 'engagement', 'membership', 'property', 'tenancy', 'document', 'ocr_output',
     'extraction', 'extraction_review', 'inspection', 'defect', 'hazard_case', 'case_defect',
     'holiday_calendar', 'bank_holiday', 'deadline_rule', 'deadline', 'letter_template', 'letter',
-    'letter_version', 'task', 'quality_review', 'hazard_category']
+    'letter_version', 'task', 'quality_review', 'hazard_category', 'rule_pack', 'client_rule_pack',
+    'certificate_type', 'defect_code', 'event_type', 'vulnerability_factor_type', 'case_event']
   loop
     execute format(
       'create trigger audit after insert or update or delete on caseward.%I
          for each row execute function caseward.audit_row()', t);
   end loop;
 
-  foreach t in array array['app_user', 'tenant_contact'] loop
+  foreach t in array array['app_user', 'tenant_contact', 'household_vulnerability'] loop
     execute format(
       'create trigger audit after insert or update or delete on caseward.%I
          for each row execute function caseward.audit_row(''redact'')', t);
@@ -977,7 +1227,8 @@ begin
   -- Visible to the owning client, engaged contractors and staff.
   foreach t in array array[
     'property', 'document', 'ocr_output', 'extraction', 'extraction_review', 'inspection',
-    'defect', 'hazard_case', 'case_defect', 'case_status_change', 'deadline', 'task', 'quality_review']
+    'defect', 'hazard_case', 'case_defect', 'case_status_change', 'case_event', 'deadline', 'task',
+    'quality_review', 'client_rule_pack']
   loop
     execute format('alter table caseward.%I enable row level security', t);
     execute format('alter table caseward.%I force row level security', t);
@@ -998,9 +1249,14 @@ begin
   end loop;
 end $$;
 
--- case_status_change is written by a security definer trigger running as the
--- owner, so it must not force RLS on the owner.
+-- Written or read by security definer functions running as the owner, so
+-- these must not force RLS on the owner.
 alter table caseward.case_status_change no force row level security;
+
+-- No select policy: reads go through read_household_vulnerabilities().
+alter table caseward.household_vulnerability enable row level security;
+create policy record on caseward.household_vulnerability for insert with check (
+  caseward.can_view_special_category(client_id) and recorded_by = caseward.current_user_id());
 
 alter table caseward.client enable row level security;
 alter table caseward.client force row level security;
@@ -1011,7 +1267,7 @@ alter table caseward.engagement force row level security;
 create policy party on caseward.engagement using (
   caseward.is_staff()
   or landlord_client_id = caseward.current_client_id()
-  or contractor_client_id = caseward.current_client_id());
+  or provider_client_id = caseward.current_client_id());
 
 alter table caseward.membership enable row level security;
 alter table caseward.membership force row level security;
@@ -1047,12 +1303,32 @@ create policy write_own on caseward.audit_event for insert with check (
   and (client_id is null or caseward.can_access_client(client_id)));
 
 -- ---------------------------------------------------------------------------
+-- Deadline progress, for queue ordering and the 50%, 80% and 100% alerts
+-- ---------------------------------------------------------------------------
+
+create view caseward.deadline_progress with (security_invoker = true) as
+select
+  d.id, d.client_id, d.case_id, d.defect_id, d.inspection_id, d.rule_key, d.rule_version,
+  d.clock_started_at, d.due_at, d.status,
+  least(1.5, extract(epoch from now() - d.clock_started_at)
+             / extract(epoch from d.due_at - d.clock_started_at))::numeric(6, 4) as elapsed_fraction,
+  case
+    when d.status = 'missed' or now() > d.due_at then 'overdue'
+    when now() >= d.clock_started_at + (d.due_at - d.clock_started_at) * 0.8 then 'alert_80'
+    when now() >= d.clock_started_at + (d.due_at - d.clock_started_at) * 0.5 then 'alert_50'
+    else 'on_track'
+  end as alert_level
+from caseward.deadline d
+where d.status in ('open', 'missed') and d.completed_at is null;
+
+-- ---------------------------------------------------------------------------
 -- Grants. No DELETE for the API except unlinking a defect from a case;
 -- retention deletes run as a separate, audited role.
 -- ---------------------------------------------------------------------------
 
 grant select on all tables in schema caseward to caseward_app;
-revoke select on caseward.audit_chain_head from caseward_app;
+revoke select on caseward.audit_chain_head, caseward.household_vulnerability from caseward_app;
+grant insert on caseward.household_vulnerability to caseward_app;
 
 grant insert, update on
   caseward.property, caseward.tenancy, caseward.tenant_contact, caseward.document,
@@ -1061,11 +1337,13 @@ grant insert, update on
   caseward.quality_review
 to caseward_app;
 grant insert, delete on caseward.case_defect to caseward_app;
-grant insert on caseward.letter_version, caseward.audit_event, caseward.job to caseward_app;
+grant insert on caseward.letter_version, caseward.audit_event, caseward.job, caseward.case_event to caseward_app;
 
 grant insert, update on
   caseward.client, caseward.engagement, caseward.app_user, caseward.membership,
-  caseward.deadline_rule, caseward.letter_template, caseward.hazard_category
+  caseward.deadline_rule, caseward.letter_template, caseward.hazard_category, caseward.rule_pack,
+  caseward.client_rule_pack, caseward.certificate_type, caseward.defect_code, caseward.event_type,
+  caseward.vulnerability_factor_type
 to caseward_staff;
 grant insert on caseward.holiday_calendar, caseward.bank_holiday to caseward_staff;
 grant delete on caseward.membership, caseward.deadline_rule to caseward_staff;
@@ -1080,10 +1358,62 @@ revoke execute on function caseward.verify_audit_chain() from public;
 grant execute on function caseward.verify_audit_chain() to caseward_staff;
 
 -- ---------------------------------------------------------------------------
--- Reference data: the 29 HHSRS hazards
+-- Reference data. Every pack starts 'off'. No legal timescales are seeded:
+-- deadline rules are drafted by the compliance expert and confirmed by a
+-- qualified person.
 -- ---------------------------------------------------------------------------
 
-insert into caseward.hazard_category (code, name) values
+insert into caseward.rule_pack (code, name) values
+  ('awaab_social', 'Awaab''s Law: social housing'),
+  ('social_certificates', 'Social housing certificates'),
+  ('awaab_private_rented', 'Awaab''s Law: private rented (draft)'),
+  ('block_safety', 'Block safety'),
+  ('private_rented_compliance', 'Private rented compliance'),
+  ('nhs_estates', 'NHS estates');
+
+insert into caseward.certificate_type (code, rule_pack, name) values
+  ('eicr', 'social_certificates', 'Electrical installation condition report'),
+  ('gas_safety', 'social_certificates', 'Gas safety record'),
+  ('fire_risk_assessment', 'social_certificates', 'Fire risk assessment'),
+  ('water_risk_assessment', 'social_certificates', 'Water hygiene (legionella) risk assessment'),
+  ('lift_inspection', 'social_certificates', 'Lift thorough examination'),
+  ('asbestos_survey', 'social_certificates', 'Asbestos survey');
+
+insert into caseward.defect_code (scheme, code, name, rule_pack) values
+  ('eicr', 'C1', 'Danger present', 'social_certificates'),
+  ('eicr', 'C2', 'Potentially dangerous', 'social_certificates'),
+  ('eicr', 'C3', 'Improvement recommended', 'social_certificates'),
+  ('eicr', 'FI', 'Further investigation required', 'social_certificates'),
+  ('gas_safety', 'ID', 'Immediately dangerous', 'social_certificates'),
+  ('gas_safety', 'AR', 'At risk', 'social_certificates'),
+  ('gas_safety', 'NCS', 'Not to current standards', 'social_certificates'),
+  ('general', 'Other', 'Other defect', 'social_certificates');
+
+insert into caseward.event_type (code, subject_kind, name, is_excuse_evidence) values
+  ('case_aware', 'case', 'Landlord became aware', false),
+  ('made_safe', 'case', 'Hazard made safe', false),
+  ('investigation_completed', 'case', 'Investigation completed', false),
+  ('written_summary_sent', 'case', 'Written summary sent to tenant', false),
+  ('safety_works_started', 'case', 'Safety works started', false),
+  ('safety_works_completed', 'case', 'Safety works completed', false),
+  ('tenant_update_sent', 'case', 'Update sent to tenant', false),
+  ('access_attempt', 'case', 'Access attempted', true),
+  ('access_refused', 'case', 'Access refused by tenant', true),
+  ('appointment_missed', 'case', 'Appointment missed', true),
+  ('supply_delay', 'case', 'Materials or supply delay', true),
+  ('alternative_accommodation_offered', 'case', 'Alternative accommodation offered', false),
+  ('alternative_accommodation_accepted', 'case', 'Alternative accommodation accepted', false),
+  ('alternative_accommodation_refused', 'case', 'Alternative accommodation refused', true),
+  ('household_moved_out', 'case', 'Household moved to alternative accommodation', false),
+  ('household_moved_back', 'case', 'Household moved back', false),
+  ('note', 'case', 'Case note', false),
+  ('defect_identified', 'defect', 'Defect identified', false),
+  ('defect_remediated', 'defect', 'Defect remediated', false),
+  ('inspection_completed', 'inspection', 'Inspection completed', false),
+  ('next_inspection_completed', 'inspection', 'Next inspection completed', false);
+
+insert into caseward.hazard_category (code, name, rule_pack)
+select code, name, 'awaab_social' from (values
   ('damp_and_mould_growth', 'Damp and mould growth'),
   ('excess_cold', 'Excess cold'),
   ('excess_heat', 'Excess heat'),
@@ -1112,6 +1442,6 @@ insert into caseward.hazard_category (code, name) values
   ('collision_and_entrapment', 'Collision and entrapment'),
   ('explosions', 'Explosions'),
   ('position_operability_amenities', 'Position and operability of amenities etc.'),
-  ('structural_collapse', 'Structural collapse and falling elements');
+  ('structural_collapse', 'Structural collapse and falling elements')) as v (code, name);
 
 commit;
