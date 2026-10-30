@@ -76,6 +76,9 @@ function Shell({ children }: { children: React.ReactNode }) {
         <Button className="button" data-variant="secondary" onPress={() => setHelp(true)}>
           Shortcuts <kbd aria-hidden="true">?</kbd>
         </Button>
+        <form method="post" action="/api/auth/logout">
+          <button className="button" data-variant="secondary" type="submit">Sign out</button>
+        </form>
       </header>
       <main id="main" tabIndex={-1}>{children}</main>
       <ShortcutHelp open={help} onOpenChange={setHelp} />

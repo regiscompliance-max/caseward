@@ -41,7 +41,7 @@ def lead(ops_api, world):
 def other_handler(ops_api, staff_conn, world):
     name = f"handler{uuid.uuid4().hex[:4]}"
     with scoped_transaction(staff_conn, world.staff_ctx) as conn:
-        insert(conn, "app_user", idp_subject=world.subject(name), email=f"{name}-{world.tag}@example.test",
+        insert(conn, "app_user", idp_subject=world.idp_subject(name), email=f"{name}-{world.tag}@example.test",
                display_name=name, staff_role="case_handler")
     return As(ops_api, world, name, "operations")
 

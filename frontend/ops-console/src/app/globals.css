@@ -97,3 +97,5 @@ tr[aria-selected="true"] { background: #e8f0fa; outline: 2px solid var(--brand);
 .switch[data-selected] .switch-track { background: var(--brand); }
 .switch[data-selected] .switch-thumb { transform: translateX(1.15rem); background: #fff; }
 .switch[data-focus-visible] .switch-track { outline: 3px solid var(--ink); box-shadow: 0 0 0 6px var(--focus); }
+.sign-in-options { list-style: none; padding: 0; display: grid; gap: .75rem; }
+.sign-in-options .button { display: inline-block; text-decoration: none; }

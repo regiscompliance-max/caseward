@@ -49,3 +49,14 @@ other security definer function was checked the same way and works:
   database, but **not** superuser or BYPASSRLS.
 - Client identity providers must send `email` and `email_verified` claims
   for invitations to work.
+
+## Amendment (30 Oct 2026): several identity providers
+
+The API now trusts a list of identity providers. Users are stored as
+`issuer|subject` (migration 0013), since a subject is unique only within one
+provider: two organisations' directories could otherwise sign in as the
+same Caseward user. Invitations are still claimed by verified email, now
+bound to the issuer-qualified subject. Configure the providers per API in
+`CASEWARD_CLIENT_OIDC_PROVIDERS` and `CASEWARD_OPS_OIDC_PROVIDERS` (JSON),
+including each provider's multi-factor rule.
+

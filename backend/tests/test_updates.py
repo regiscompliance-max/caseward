@@ -218,7 +218,7 @@ def test_dead_jobs_can_be_seen_and_retried(ops_api, staff_conn, admin_dsn, lead,
     assert summary["ocr"]["dead"] >= 1
     name = f"admin{uuid.uuid4().hex[:4]}"
     with scoped_transaction(staff_conn, world.staff_ctx) as conn:
-        insert(conn, "app_user", idp_subject=world.subject(name), email=f"{name}-{world.tag}@example.test",
+        insert(conn, "app_user", idp_subject=world.idp_subject(name), email=f"{name}-{world.tag}@example.test",
                display_name=name, staff_role="admin")
     admin_user = As(ops_api, world, name, "operations")
     problem(lead.post(f"/jobs/{job_id}/retry"), 403, "forbidden")

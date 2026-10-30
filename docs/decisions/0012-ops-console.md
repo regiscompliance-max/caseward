@@ -41,12 +41,31 @@ Date: 30 Oct 2026. Status: proposed.
 - **Security headers:** `no-store` everywhere, no framing, nosniff, no
   referrer, and a Content Security Policy.
 
-## Not yet
+- **Single sign-on with several identity providers** (founder's decision,
+  30 Oct 2026):
+  - Our staff directory and other organisations' own providers are each
+    configured in `CASEWARD_CONSOLE_OIDC_PROVIDERS`, and the sign-in page
+    offers one button per provider.
+  - The flow is OpenID Connect authorisation code with PKCE, state and nonce
+    (`openid-client`).
+  - The access token goes in an httpOnly, SameSite=Strict cookie that lasts
+    as long as the token, capped at 8 hours.
+  - After sign-in the console only redirects to its own pages.
+  - An ended session goes back to sign-in and returns afterwards.
+  - The development token form appears only when `CASEWARD_DEV_SIGN_IN=1`.
+- **The API trusts several issuers** (decision 0010, amended):
+  - Each provider has its own keys, audience and multi-factor rule (`amr`
+    or `acr`, which providers report differently).
+  - A token is checked only with its own issuer's keys, and unknown issuers
+    are refused.
+  - Users are stored as `issuer|subject`, because a subject is unique only
+    within one provider (migration 0013).
 
-- **Sign-in.** Production needs single sign-on with multi-factor
-  authentication, which waits on the choice of identity provider. Until
-  then `/sign-in` accepts a pasted token, only when
-  `CASEWARD_DEV_SIGN_IN=1`.
+## Not yet
+- **Real sign-in tested end to end.** The flow is tested with the OIDC
+  library mocked. Sign in once through each configured provider before go-live.
+- **Token refresh.** Sessions end when the access token expires (at most 8
+  hours). Add refresh tokens if staff find that disruptive.
 - **The Content Security Policy still allows inline scripts**, which Next.js
   needs without per-request nonces. Move to nonces before production.
 - **Screens still to build:** letters, case timeline, documents, quality

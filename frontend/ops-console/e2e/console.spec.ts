@@ -116,10 +116,20 @@ test("shortcuts are listed, and single-key shortcuts can be turned off", async (
   expect(captured.claims).toBe(0);
 });
 
-test("the sign-in page is accessible and says SSO is coming", async ({ page }) => {
-  await page.goto("/sign-in");
-  await expect(page.getByText(/Single sign-on with multi-factor authentication will replace this page/)).toBeVisible();
+test("the sign-in page offers each provider and is accessible", async ({ page }) => {
+  await page.goto("/sign-in?returnTo=/alerts");
+  const staff = page.getByRole("link", { name: "Sign in with Caseward staff" });
+  await expect(staff).toHaveAttribute("href", "/api/auth/login?provider=staff&returnTo=%2Falerts");
+  await expect(page.getByRole("link", { name: "Sign in with Riverside Homes" })).toBeVisible();
   await expectAccessible(page);
+});
+
+test("an ended session sends people to sign in and back", async ({ page }) => {
+  await page.route("**/api/ops/**", (route) => route.fulfill({ status: 401, contentType: "application/json",
+    body: JSON.stringify({ code: "token_expired", title: "Not signed in", status: 401 }) }));
+  await page.goto("/alerts");
+  await expect(page).toHaveURL(/\/sign-in\?error=session_ended&returnTo=%2Falerts$/);
+  await expect(page.getByRole("alert")).toContainText("Your session has ended");
 });
 
 test("dates are day/month/year, and impossible dates are caught before submitting", async ({ page }) => {

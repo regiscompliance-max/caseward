@@ -66,11 +66,21 @@ Problems found and fixed while building:
 Decisions made (and decision record links):
 - `docs/decisions/0012-ops-console.md`
 
+Decisions from the founder (30 Oct 2026):
+1. **Several identity providers**, not one. Built in this branch:
+   - the console signs in with any configured OIDC provider (PKCE, state,
+     nonce, httpOnly session cookie, ended sessions go back to sign-in);
+   - the API trusts a list of issuers, each with its own keys and
+     multi-factor rule, and stores users as `issuer|subject` (migration
+     0013).
+   Tests: 9 auth route tests (mocked OIDC library), 5 backend multi-issuer
+   tests, and 2 browser tests.
+2. **Open the next task automatically** after each review: kept as built.
+
 Open questions for the founder:
-1. **Identity provider** for staff single sign-on with MFA (Entra ID,
-   Okta, Auth0, Cognito…)? The console can't go live without it.
-2. Should the console open the next task automatically after each review,
-   as now, or return to the queue?
+- Which providers to configure first, and does each report multi-factor
+  authentication as `amr: mfa` or with an `acr` value? Confirm per provider
+  when connecting it.
 
 Risks or problems found:
 - The Content Security Policy allows inline scripts until we add

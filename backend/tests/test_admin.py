@@ -36,7 +36,7 @@ def client_api(database):
 def admin(ops_api, staff_conn, world):
     name = f"admin{uuid.uuid4().hex[:4]}"
     with scoped_transaction(staff_conn, world.staff_ctx) as conn:
-        user = insert(conn, "app_user", idp_subject=world.subject(name), email=f"{name}-{world.tag}@example.test",
+        user = insert(conn, "app_user", idp_subject=world.idp_subject(name), email=f"{name}-{world.tag}@example.test",
                       display_name=name, staff_role="admin")
     who = As(ops_api, world, name, "operations")
     who.user_id = user

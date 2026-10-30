@@ -12,6 +12,17 @@ export type Problem = Schemas["Problem"];
 /** All calls go through the console's own server, which adds the token. */
 export const api = createClient<paths>({ baseUrl: "/api/ops" });
 
+// When the session has ended, go back to sign-in and return here afterwards.
+api.use({
+  onResponse({ response }) {
+    if (response.status === 401 && typeof window !== "undefined") {
+      const here = window.location.pathname + window.location.search;
+      window.location.assign(`/sign-in?error=session_ended&returnTo=${encodeURIComponent(here)}`);
+    }
+    return response;
+  },
+});
+
 export class ApiError extends Error {
   constructor(public status: number, public problem: Partial<Problem>) {
     super(problem.detail || problem.title || `Request failed (${status})`);
