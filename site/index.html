@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>Caseward Operations Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  /* Layout: a single reading column of captioned screenshots in shift order, with a facts panel up top. */
+  :root {
+    --bg: #ffffff;
+    --fg: #0b0c0c;
+    --muted: #4a4f56;
+    --line: #c9ced6;
+    --panel: #f2f4f7;
+    --brand: #1d4e89;
+    --brand-ink: #ffffff;
+    --good: #00703c;
+    --warn: #8a5300;
+    --bad: #a4161a;
+    --shot-edge: #b1b4b6;
+    --font-display: "Public Sans", system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+    --font-body: "Public Sans", system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f141b; --fg: #eef1f5; --muted: #a9b2bf; --line: #2f3946; --panel: #18202b;
+      --brand: #7fb0ee; --brand-ink: #0f141b; --good: #5fd39a; --warn: #f0b35c; --bad: #ff8a8d; --shot-edge: #3a4553;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0f141b; --fg: #eef1f5; --muted: #a9b2bf; --line: #2f3946; --panel: #18202b;
+    --brand: #7fb0ee; --brand-ink: #0f141b; --good: #5fd39a; --warn: #f0b35c; --bad: #ff8a8d; --shot-edge: #3a4553;
+    color-scheme: dark;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-body);
+    font-size: 1rem;
+    line-height: 1.55;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 0 4rem;
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; display: grid; gap: 2.5rem; }
+  a { color: var(--brand); }
+  :focus-visible { outline: 3px solid var(--brand); outline-offset: 2px; }
+
+  header.top { border-bottom: 4px solid var(--brand); padding-block: 2rem 1.25rem; display: grid; gap: .5rem; }
+  .eyebrow { font-family: var(--font-mono); font-size: .8rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  h1 { font-family: var(--font-display); font-size: clamp(1.8rem, 4vw, 2.5rem); line-height: 1.15; margin: 0; text-wrap: balance; }
+  h2 { font-family: var(--font-display); font-size: 1.35rem; margin: 0; text-wrap: balance; }
+  h3 { font-family: var(--font-display); font-size: 1.1rem; margin: 0; }
+  .lede { max-width: 65ch; margin: 0; color: var(--fg); }
+
+  .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 1rem; }
+  .fact { background: var(--panel); border: 1px solid var(--line); padding: 1rem 1.1rem; display: grid; gap: .5rem; align-content: start; }
+  .fact ul { margin: 0; padding-left: 1.1rem; display: grid; gap: .35rem; }
+  .tag { display: inline-flex; align-items: center; gap: .4rem; font-family: var(--font-mono); font-size: .78rem; font-weight: 500;
+    letter-spacing: .04em; text-transform: uppercase; }
+  .tag::before { content: ""; width: .6rem; height: .6rem; border: 2px solid currentColor; }
+  .tag.good { color: var(--good); }
+  .tag.good::before { background: currentColor; border-radius: 50%; }
+  .tag.warn { color: var(--warn); }
+  .tag.warn::before { transform: rotate(45deg); }
+  .tag.bad { color: var(--bad); }
+
+  .steps { display: grid; gap: 3rem; counter-reset: step; }
+  figure { margin: 0; display: grid; gap: .75rem; min-width: 0; }
+  figcaption { display: grid; gap: .3rem; max-width: 70ch; }
+  figcaption h3::before { counter-increment: step; content: counter(step) ". "; color: var(--muted); font-family: var(--font-mono); font-weight: 500; }
+  figcaption p { margin: 0; color: var(--muted); }
+  .shot { border: 1px solid var(--shot-edge); background: #ffffff; display: block; width: 100%; height: auto; max-width: 100%; }
+
+  .note { border-left: 4px solid var(--bad); background: var(--panel); padding: .75rem 1rem; max-width: 70ch; }
+  .note p { margin: 0; }
+  code, .mono { font-family: var(--font-mono); font-size: .9em; font-variant-numeric: tabular-nums; }
+  footer { border-top: 1px solid var(--line); padding-top: 1rem; color: var(--muted); font-size: .9rem; max-width: 70ch; }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+
+<style>:root{color-scheme:light}body{margin:0}img{max-width:100%}</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <span class="eyebrow">Preview · 30 October 2026 · branch feat/ops-console</span>
+    <h1>Caseward operations console</h1>
+    <p class="lede">What a case handler sees during a shift: sign in, take the most urgent task, check an AI draft against the certificate, and deal with deadline alerts. These screens come from the console running against the real backend and database, filled with synthetic landlords, properties and certificates.</p>
+  </header>
+
+  <section class="facts" aria-label="What this preview shows">
+    <div class="fact">
+      <span class="tag good">Worked end to end</span>
+      <ul>
+        <li>Four synthetic certificates went through the real pipeline: malware scan, page rendering, text reading and the AI draft checks.</li>
+        <li>The flag checks caught "Satisfactory" with a C2 and a low-confidence postcode. The C1 certificate went to the top of the queue as urgent.</li>
+        <li>Approving a correction created the inspection and both defects, queued their deadline calculation, and opened the next task automatically.</li>
+        <li>The browser logged no errors.</li>
+      </ul>
+    </div>
+    <div class="fact">
+      <span class="tag warn">Stand-ins in this preview</span>
+      <ul>
+        <li>Certificates, landlords and people are synthetic.</li>
+        <li>The AI model is a stand-in. Real extraction stays off until the UK processing agreement is signed.</li>
+        <li>The malware scanner is a stand-in, because ClamAV isn't installed here.</li>
+        <li>Sign-in used a development token. The sign-in buttons for the two providers are configured placeholders.</li>
+        <li>Deadline rules are labelled UNVERIFIED example rules, not legal advice.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="steps" aria-label="Screens in the order a case handler uses them">
+    <figure>
+      <img class="shot" src="shots/1-sign-in.png" width="1440" height="950" alt="Sign-in page with buttons for Caseward staff and Riverside Homes, and a development token form below.">
+      <figcaption>
+        <h3>Sign in</h3>
+        <p>One button for each identity provider. Multi-factor authentication is required for every sign-in. The development token form at the bottom only appears in development.</p>
+      </figcaption>
+    </figure>
+
+    <figure>
+      <img class="shot" src="shots/2-queue.png" width="1440" height="950" alt="Work queue with four tasks. An urgent certificate review for Riverside Homes is first, then two high-priority reviews, then a manual handling task.">
+      <figcaption>
+        <h3>The work queue</h3>
+        <p>Most urgent first. The certificate with a C1 (danger present) is marked Urgent, with a one-hour review time. The fire risk assessment has no AI form yet, so it went to manual handling. Press <span class="mono">N</span> to take the next task.</p>
+      </figcaption>
+    </figure>
+
+    <figure>
+      <img class="shot" src="shots/3-review-urgent.png" width="1440" alt="Review screen for 3 Mill Lane. The certificate page is on the left; on the right are the extracted fields and two defects, a C1 for exposed live conductors and a C3.">
+      <figcaption>
+        <h3>Reviewing the urgent certificate</h3>
+        <p>The certificate page sits beside the fields the AI filled in. Each field shows the AI's confidence. Nothing reaches the landlord until a person approves it.</p>
+      </figcaption>
+    </figure>
+
+    <figure>
+      <img class="shot" src="shots/4-review-flags.png" width="1440" alt="Review screen for 12 Willow Court with two warnings: low confidence on the postcode at 71 per cent, and a contradiction because the outcome is Satisfactory while a C2 is present.">
+      <figcaption>
+        <h3>Flags that need a person's judgement</h3>
+        <p>This certificate says "Satisfactory" but lists a C2 (potentially dangerous), so it is flagged as a contradiction. The postcode was read with low confidence. Each warning sits next to its field and is read out with it by screen readers.</p>
+      </figcaption>
+    </figure>
+
+    <figure>
+      <img class="shot" src="shots/5-review-page-2.png" width="1440" height="950" alt="The same review with page 2 of the certificate showing the observations table with the C2 and C3 codes.">
+      <figcaption>
+        <h3>Checking the second page</h3>
+        <p><span class="mono">Alt + →</span> turns the page without leaving the form. Page images carry the viewer's name and the time, and the original file is never downloaded.</p>
+      </figcaption>
+    </figure>
+
+    <figure>
+      <img class="shot" src="shots/6-review-corrected.png" width="1440" alt="The review after changing the outcome to Unsatisfactory. The main button now reads Approve with corrections, with a note that the change will be saved as a correction.">
+      <figcaption>
+        <h3>Correcting the draft</h3>
+        <p>After changing the outcome to Unsatisfactory, the button becomes "Approve with corrections", so the record shows that a person changed the AI's draft. Approving here created the inspection and both defects in the real database.</p>
+      </figcaption>
+    </figure>
+
+    <figure>
+      <img class="shot" src="shots/7-alerts.png" width="1440" height="950" alt="Deadline alerts: an 80 per cent alert for a significant hazard at Riverside Homes, due in about 6 hours, and an overdue emergency hazard at Northgate Housing Association.">
+      <figcaption>
+        <h3>Deadline alerts</h3>
+        <p>Raised by the background sweep. An emergency hazard at Northgate is overdue, and a significant hazard at Riverside has used 80% of its time. Each state is shown in words and a shape, not by colour alone. Acknowledging an alert never hides the deadline.</p>
+      </figcaption>
+    </figure>
+
+    <figure>
+      <img class="shot" src="shots/8-shortcuts.png" width="1440" height="950" alt="Keyboard shortcuts dialog listing N, J and K, Enter, Alt with arrows, Ctrl plus Enter and the question mark, with a switch to turn single-key shortcuts off.">
+      <figcaption>
+        <h3>Keyboard shortcuts</h3>
+        <p>Press <span class="mono">?</span> to see them all. Single-key shortcuts can be switched off, and they never fire while typing in a field.</p>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section class="note" aria-labelledby="found">
+    <h2 id="found" style="font-size:1.1rem;margin-bottom:.4rem">Found in this preview</h2>
+    <p>The "do not copy" watermark runs across the certificate's own text, for example over "Date of inspection" in step 4. It makes the page harder to read and will be fixed next: lighter, and placed between the lines of text.</p>
+  </section>
+
+  <footer>
+    Synthetic data only. No real tenant, landlord or certificate appears here.
+  </footer>
+</div>
+
+</body>
+</html>

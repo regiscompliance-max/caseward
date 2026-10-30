@@ -1,0 +1,11 @@
+// Cloudflare hosts only the public preview walkthrough in site/: screenshots
+// of synthetic data. Caseward itself (console, APIs, database) runs on UK
+// hosting, because client data must be stored and processed in the UK.
+{
+  "name": "caseward",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "./site",
+    "not_found_handling": "404-page"
+  }
+}
