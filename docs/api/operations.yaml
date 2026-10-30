@@ -88,7 +88,11 @@ paths:
     get:
       operationId: listTasks
       tags: [Queue]
-      summary: The work queue, sorted by nearest legal deadline, then SLA
+      summary: The work queue, sorted by priority, then nearest legal deadline, then SLA
+      description: >
+        Priority comes first so an urgent review (for example a C1 or ID on a
+        certificate, which has no deadline until it is approved) is never
+        behind routine work with a later legal deadline.
       x-roles: [case_handler, quality_analyst, compliance_lead, admin]
       x-audit: view
       parameters:

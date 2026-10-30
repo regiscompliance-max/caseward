@@ -957,7 +957,8 @@ components:
           oneOf: [{$ref: '#/components/schemas/Timestamp'}, {type: 'null'}]
         earliest_deadline_due_at:
           oneOf: [{$ref: '#/components/schemas/Timestamp'}, {type: 'null'}]
-          description: The nearest legal deadline linked to the subject. The queue sorts by this first.
+          description: The nearest open legal deadline linked to the subject. The queue sorts by priority, then this.
+        note: {type: [string, 'null']}
         created_at: {$ref: '#/components/schemas/Timestamp'}
         started_at:
           oneOf: [{$ref: '#/components/schemas/Timestamp'}, {type: 'null'}]

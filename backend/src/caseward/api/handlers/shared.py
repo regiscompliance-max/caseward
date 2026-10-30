@@ -25,13 +25,17 @@ def decode_cursor(call: Call) -> list | None:
         raise Problem(400, "invalid_cursor", "The cursor is not valid") from None
 
 
+def encode_cursor(values: list) -> str:
+    return base64.urlsafe_b64encode(json.dumps(to_json(values)).encode()).decode()
+
+
 def page(call: Call, rows: list[dict], key: list[str]) -> dict:
     limit = call.query.get("limit", 50)
     next_cursor = None
     if len(rows) > limit:
         rows = rows[:limit]
         last = rows[-1]
-        next_cursor = base64.urlsafe_b64encode(json.dumps(to_json([last[k] for k in key])).encode()).decode()
+        next_cursor = encode_cursor([last[k] for k in key])
     for row in rows:
         for k in key:
             if k.startswith("_"):
