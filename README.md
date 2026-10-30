@@ -8,6 +8,7 @@ Start here:
 - [docs/BRIEF.md](docs/BRIEF.md): master brief (every role reads this first)
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): components, security boundaries, data model
 - [docs/api/](docs/api/): API specification and conventions
+- [frontend/ops-console/](frontend/ops-console/): operations console (decision 0012)
 - [docs/decisions/](docs/decisions/): decision records
 - [docs/handoffs/](docs/handoffs/): hand-off notes, newest last
 
@@ -35,7 +36,11 @@ database login: a member of `caseward_app` for the client API, and of
 `caseward_app` plus `caseward_staff` for the operations API.
 
 ```sh
-export CASEWARD_OIDC_ISSUER=https://your-idp/ CASEWARD_OIDC_JWKS_URL=https://your-idp/.well-known/jwks.json
+# Trusted identity providers per API (several allowed), each with its multi-factor rule:
+export CASEWARD_OPS_OIDC_PROVIDERS='[{"issuer": "https://login.example/", "jwks_url": "https://login.example/keys",
+  "audience": "caseward-ops", "mfa_amr": ["mfa"]}]'
+export CASEWARD_CLIENT_OIDC_PROVIDERS='[...]'   # the same shape; one entry per landlord SSO
+# (one provider only: CASEWARD_OIDC_ISSUER, CASEWARD_OIDC_JWKS_URL and CASEWARD_{CLIENT,OPS}_OIDC_AUDIENCE)
 export CASEWARD_CLIENT_DATABASE_URL=postgresql://client_api@db/caseward CASEWARD_CLIENT_OIDC_AUDIENCE=caseward-client
 export CASEWARD_OPS_DATABASE_URL=postgresql://ops_api@db/caseward CASEWARD_OPS_OIDC_AUDIENCE=caseward-ops
 uvicorn caseward.api.main:client_app --factory --port 8000
@@ -77,3 +82,17 @@ The APIs need the same `CASEWARD_S3_*` settings to issue upload and download
 links. For local development, use `CASEWARD_STORAGE_BACKEND=local` and
 `CASEWARD_LOCAL_STORAGE_DIR`. Run as many copies as
 you like: two workers never claim the same job.
+
+## Operations console
+
+```sh
+cd frontend/ops-console
+npm ci
+export CASEWARD_OPS_API_URL=http://localhost:8001/ops/v1 CASEWARD_CONSOLE_URL=http://localhost:3100
+export CASEWARD_CONSOLE_OIDC_PROVIDERS='[{"id": "staff", "name": "Caseward staff", "issuer": "https://login.example/",
+  "client_id": "...", "client_secret": "...", "scope": "openid email", "authorization_params": {"audience": "caseward-ops"}}]'
+CASEWARD_DEV_SIGN_IN=1 npm run dev   # development token sign-in as well; never set in production
+npm run typecheck && npm test   # unit and component tests
+npm run e2e                     # browser tests against a mocked API, with axe accessibility scans
+npm run gen:api                 # regenerate API types after changing docs/api/operations.yaml
+```

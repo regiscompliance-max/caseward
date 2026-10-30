@@ -22,9 +22,8 @@ from caseward.api.handlers import operations as ops_handlers
 from caseward.api.settings import Settings
 from caseward.api.spec import load_spec
 from caseward.db import scoped_transaction
-from conftest import PASSWORD, insert, new_case, new_deadline
+from conftest import ISSUER, PASSWORD, insert, new_case, new_deadline
 
-ISSUER = "https://idp.caseward.test/"
 KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 
 
@@ -170,7 +169,7 @@ def test_staff_and_client_users_use_their_own_api(client_api, ops_api, world):
 def make_viewer(staff_conn, world):
     name = f"viewer{uuid.uuid4().hex[:4]}"
     with scoped_transaction(staff_conn, world.staff_ctx) as conn:
-        user = insert(conn, "app_user", idp_subject=world.subject(name), email=f"{name}-{world.tag}@example.test",
+        user = insert(conn, "app_user", idp_subject=world.idp_subject(name), email=f"{name}-{world.tag}@example.test",
                       display_name=name)
         conn.execute("insert into caseward.membership (user_id, client_id, role) values (%s, %s, 'client_viewer')",
                      [user, world.landlord_a])
@@ -412,3 +411,80 @@ def test_missing_grants_fail_loudly_instead_of_looking_like_not_found(database, 
             As(api, world, "user_a", "client").get("/me")
     finally:
         pool.close()
+
+
+# Several identity providers ---------------------------------------------------------
+
+ISSUER_B = "https://login.landlord-b.example/"
+KEY_B = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+ACR_MFA = "http://schemas.openid.net/pape/policies/2007/06/multi-factor"
+
+
+def token_from(issuer, key, subject, audience="client", **claims):
+    now = int(time.time())
+    body = {"sub": subject, "iss": issuer, "aud": audience, "iat": now, "exp": now + 300, **claims}
+    return jwt.encode(body, key, algorithm="RS256")
+
+
+@pytest.fixture(scope="module")
+def multi_api(database):
+    from caseward.api.auth import MultiIssuerVerifier
+    pool = ConnectionPool(psycopg.conninfo.make_conninfo(database, user="cw_test_app", password=PASSWORD),
+                          kwargs={"autocommit": True}, min_size=1, max_size=2, open=True)
+    verifier = MultiIssuerVerifier([
+        JwtVerifier(ISSUER, "client", key=KEY.public_key()),
+        # This landlord's provider proves MFA with acr, not amr.
+        JwtVerifier(ISSUER_B, "client", key=KEY_B.public_key(), mfa_amr=(), mfa_acr=(ACR_MFA,)),
+    ])
+    settings = Settings(database_url="", validate_responses=True)
+    yield TestClient(build_app("client", settings, pool, verifier, client_handlers.HANDLERS))
+    pool.close()
+
+
+def get_me(api, token):
+    return api.get("/me", headers={"Authorization": f"Bearer {token}"})
+
+
+def test_the_same_subject_from_two_providers_is_two_people(multi_api, staff_conn, world):
+    subject = f"shared-{world.tag}"
+    with scoped_transaction(staff_conn, world.staff_ctx) as conn:
+        for issuer, client in ((ISSUER, world.landlord_a), (ISSUER_B, world.landlord_b)):
+            user = insert(conn, "app_user", idp_subject=f"{issuer}|{subject}",
+                          email=f"{subject}-{client}@example.test", display_name=issuer)
+            conn.execute("insert into caseward.membership (user_id, client_id, role) values (%s, %s, 'client_viewer')",
+                         [user, client])
+    a = get_me(multi_api, token_from(ISSUER, KEY, subject, amr=["mfa"])).json()
+    b = get_me(multi_api, token_from(ISSUER_B, KEY_B, subject, acr=ACR_MFA)).json()
+    assert a["acting_client_id"] == str(world.landlord_a)
+    assert b["acting_client_id"] == str(world.landlord_b)
+    assert a["user"]["id"] != b["user"]["id"]
+
+
+def test_a_token_is_checked_with_its_own_providers_keys(multi_api, world):
+    # Claims landlord B's issuer but is signed with our key.
+    forged = token_from(ISSUER_B, KEY, world.subject("user_a"), acr=ACR_MFA)
+    problem(get_me(multi_api, forged), 401, "invalid_token")
+
+
+def test_unknown_issuers_are_refused(multi_api, world):
+    stranger = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    problem(get_me(multi_api, token_from("https://evil.example/", stranger, world.subject("user_a"), amr=["mfa"])),
+            401, "invalid_token")
+
+
+def test_each_provider_proves_mfa_its_own_way(multi_api, world):
+    subject = f"shared-{world.tag}"
+    problem(get_me(multi_api, token_from(ISSUER_B, KEY_B, subject, amr=["mfa"])), 401, "mfa_required")
+    problem(get_me(multi_api, token_from(ISSUER, KEY, world.subject("user_a"), acr=ACR_MFA)), 401, "mfa_required")
+    assert get_me(multi_api, token_from(ISSUER, KEY, world.subject("user_a"), amr=["pwd", "mfa"])).status_code == 200
+
+
+def test_settings_read_several_providers(monkeypatch):
+    import json as _json
+    monkeypatch.setenv("CASEWARD_OPS_DATABASE_URL", "postgresql://x")
+    monkeypatch.setenv("CASEWARD_OPS_OIDC_PROVIDERS", _json.dumps([
+        {"issuer": ISSUER, "jwks_url": "https://idp/jwks", "audience": "ops"},
+        {"issuer": ISSUER_B, "jwks_url": "https://b/jwks", "audience": "ops", "mfa_amr": [], "mfa_acr": [ACR_MFA]}]))
+    settings = Settings.from_env("CASEWARD_OPS")
+    assert [p.issuer for p in settings.identity_providers] == [ISSUER, ISSUER_B]
+    assert settings.identity_providers[1].mfa_acr == (ACR_MFA,)

@@ -22,6 +22,7 @@ from caseward.deadlines import CALCULATOR_VERSION, DeadlineRule, compute_due_at
 ADMIN_DSN = os.environ.get("CASEWARD_TEST_ADMIN_DSN", "postgresql://postgres:postgres@localhost:5432/postgres")
 MIGRATIONS = Path(__file__).resolve().parents[1] / "db" / "migrations"
 PASSWORD = "caseward-test"
+ISSUER = "https://idp.caseward.test/"
 OWNER = "cw_test_owner"
 LOGIN_ROLES = {
     "cw_test_app": ["caseward_app"],
@@ -112,8 +113,12 @@ class World:
     tag: str = ""
 
     def subject(self, name):
-        """Identity provider subject for a seeded user, e.g. 'user_a' or 'case_handler'."""
+        """Identity provider subject (the token's sub) for a seeded user, e.g. 'user_a' or 'case_handler'."""
         return f"{name}-{self.tag}"
+
+    def idp_subject(self, name):
+        """How the user is stored: issuer-qualified, since subjects are unique only per provider."""
+        return f"{ISSUER}|{self.subject(name)}"
 
     def ctx(self, client_id, user_id):
         return RequestContext(actor_kind="user", client_id=client_id, user_id=user_id, request_id="req-test")
@@ -146,7 +151,7 @@ def world(staff_conn):
     tag = uuid.uuid4().hex[:8]
 
     def user(name, staff_role=None):
-        return insert(staff_conn, "app_user", idp_subject=f"{name}-{tag}", email=f"{name}-{tag}@example.test",
+        return insert(staff_conn, "app_user", idp_subject=f"{ISSUER}|{name}-{tag}", email=f"{name}-{tag}@example.test",
                       display_name=name, staff_role=staff_role)
 
     seed_ctx = RequestContext(actor_kind="system", request_id="seed")
