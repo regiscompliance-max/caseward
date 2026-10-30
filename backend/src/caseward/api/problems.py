@@ -54,7 +54,11 @@ RULE_CODES = [
 def from_database(exc: psycopg.Error) -> Problem:
     detail = exc.diag.message_primary if exc.diag else str(exc)
     if isinstance(exc, errors.InsufficientPrivilege):
-        # A row-level security refusal: say nothing about whether the target exists.
+        if (detail or "").startswith("permission denied for"):
+            # A missing grant is a bug in our code or migrations, not a refusal: fail loudly.
+            raise exc
+        # A row-level security refusal, or one of our access checks: say nothing
+        # about whether the target exists.
         return not_found()
     if isinstance(exc, errors.ForeignKeyViolation):
         return Problem(422, "invalid_reference", "A referenced record does not exist or is not available")

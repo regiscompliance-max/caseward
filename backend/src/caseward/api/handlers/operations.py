@@ -2,7 +2,8 @@
 
 from caseward.api.framework import Call, Result
 from caseward.api.handlers import configuration as config
-from caseward.api.handlers import admin, documents, extractions, letters, queue, reports, shared, tenants
+from caseward.api.handlers import (admin, documents, extractions, letters, monitoring, queue, reports, shared,
+                                   tenants, updates)
 
 
 def create_case(call: Call) -> Result:
@@ -79,4 +80,14 @@ HANDLERS = {
     "listTenancies": tenants.list_tenancies,
     "listVulnerabilities": tenants.list_vulnerabilities,
     "createVulnerability": tenants.create_vulnerability,
+    "updateCase": updates.update_case,
+    "updateDefect": updates.update_defect,
+    "linkCaseDefect": updates.link_case_defect,
+    "unlinkCaseDefect": updates.unlink_case_defect,
+    "cancelDeadline": updates.cancel_deadline,
+    "rerunExtraction": updates.rerun_extraction,
+    "listAuditEvents": monitoring.list_audit_events,
+    "verifyAuditChain": monitoring.verify_audit_chain,
+    "getJobSummary": monitoring.get_job_summary,
+    "retryJob": monitoring.retry_job,
 }

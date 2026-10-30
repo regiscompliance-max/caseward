@@ -387,3 +387,18 @@ def test_staff_see_and_acknowledge_deadline_alerts(handler, ops_api, app_conn, d
     problem(handler.post(f"/deadline-alerts/{alert['id']}/acknowledge"), 409, "already_acknowledged")
     still_open = handler.get("/deadline-alerts", params={"client_id": str(world.landlord_a), "limit": 100}).json()
     assert alert["id"] not in [a["id"] for a in still_open["items"]]
+
+
+def test_missing_grants_fail_loudly_instead_of_looking_like_not_found(database, world):
+    from caseward.api.framework import Result
+
+    def broken(call):
+        call.conn.execute("delete from caseward.audit_event")  # the API has no DELETE grant
+        return Result(200, {})
+
+    pool, api = make_client(database, "client", "cw_test_app", {"getMe": broken})
+    try:
+        with pytest.raises(psycopg.errors.InsufficientPrivilege, match="permission denied"):
+            As(api, world, "user_a", "client").get("/me")
+    finally:
+        pool.close()

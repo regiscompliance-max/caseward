@@ -646,6 +646,7 @@ components:
         identified_on: {$ref: '#/components/schemas/LocalDate'}
         closed_at:
           oneOf: [{$ref: '#/components/schemas/Timestamp'}, {type: 'null'}]
+        row_version: {type: string, description: Send as If-Match when updating.}
         case_ids:
           type: array
           items: {$ref: '#/components/schemas/Uuid'}

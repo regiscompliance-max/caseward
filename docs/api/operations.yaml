@@ -379,10 +379,9 @@ paths:
         - $ref: 'common.yaml#/components/parameters/IdempotencyKey'
       responses:
         '202':
-          description: Queued
-          content:
-            application/json:
-              schema: {$ref: 'common.yaml#/components/schemas/Extraction'}
+          description: Queued. The new extraction appears on the document; earlier ones are kept.
+          headers:
+            Location: {$ref: 'common.yaml#/components/headers/Location'}
         '401': {$ref: 'common.yaml#/components/responses/Unauthorised'}
         '403': {$ref: 'common.yaml#/components/responses/Forbidden'}
         '404': {$ref: 'common.yaml#/components/responses/NotFound'}

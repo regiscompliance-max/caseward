@@ -12,7 +12,8 @@ INSPECTION_SELECT = """
 """
 DEFECT_SELECT = """
   select f.id, f.property_id, f.inspection_id, f.code_scheme, f.code, f.description, f.location, f.status,
-         f.identified_on, f.closed_at, f.created_at as _created_at, f.client_id as _client_id,
+         f.identified_on, f.closed_at, f.xmin::text as row_version, f.created_at as _created_at,
+         f.client_id as _client_id,
          coalesce((select array_agg(cd.case_id) from caseward.case_defect cd where cd.defect_id = f.id), '{}') as case_ids
   from caseward.defect f
 """
@@ -82,8 +83,7 @@ def list_defects(call: Call) -> Result:
 
 
 def get_defect(call: Call) -> Result:
-    row = call.row(DEFECT_SELECT.replace("from caseward.defect f", ", f.xmin::text as _etag from caseward.defect f")
-                   + " where f.id = %s", [call.path["id"]])
+    row = call.row(DEFECT_SELECT + " where f.id = %s", [call.path["id"]])
     if row is None:
         raise not_found()
-    return Result(200, _clean(row), headers={"ETag": f'"{row["_etag"]}"'}, audit_client_id=row["_client_id"])
+    return Result(200, _clean(row), headers={"ETag": f'"{row["row_version"]}"'}, audit_client_id=row["_client_id"])
