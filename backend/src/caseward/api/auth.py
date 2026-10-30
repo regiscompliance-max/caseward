@@ -73,6 +73,10 @@ def authenticate(verifier: TokenVerifier, authorization: str | None, conn: psyco
 
     with conn.transaction(), conn.cursor(row_factory=dict_row) as cur:
         user = cur.execute("select * from caseward.resolve_user(%s)", [claims["sub"]]).fetchone()
+        if user is None and claims.get("email") and claims.get("email_verified") is True:
+            # First sign-in of an invited user: bind the invitation to this subject.
+            if cur.execute("select caseward.claim_invitation(%s, %s) as id", [claims["sub"], claims["email"]]).fetchone()["id"]:
+                user = cur.execute("select * from caseward.resolve_user(%s)", [claims["sub"]]).fetchone()
         if not user or not user["is_active"]:
             raise unauthorised("unknown_user", "This account is not registered or has been deactivated.")
         rows = cur.execute("select * from caseward.user_memberships(%s)", [user["id"]]).fetchall()

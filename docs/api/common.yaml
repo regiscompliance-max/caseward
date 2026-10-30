@@ -309,6 +309,7 @@ components:
         staff_role:
           oneOf: [{$ref: '#/components/schemas/StaffRole'}, {type: 'null'}]
         is_active: {type: boolean}
+        row_version: {type: string, description: Send as If-Match when updating.}
 
     UserInvite:
       type: object
@@ -438,6 +439,7 @@ components:
         email: {type: [string, 'null'], format: email}
         preferred_channel:
           oneOf: [{$ref: '#/components/schemas/PreferredChannel'}, {type: 'null'}]
+        row_version: {type: string, description: Send as If-Match when updating.}
 
     TenantContactWrite:
       type: object

@@ -28,7 +28,9 @@ row-level security.
 
 ### Running the APIs
 
-Apply `backend/db/migrations/*.sql` in order. Then run each API with its own
+Apply `backend/db/migrations/*.sql` in order, **as the schema owner: a role
+with CREATEROLE and CREATE on the database, but not a superuser and without
+BYPASSRLS** (decision 0010). The tests do the same. Then run each API with its own
 database login: a member of `caseward_app` for the client API, and of
 `caseward_app` plus `caseward_staff` for the operations API.
 

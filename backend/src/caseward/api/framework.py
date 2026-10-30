@@ -74,6 +74,8 @@ class Result:
     # or belongs to a client other than the acting one.
     audit_entity_id: str | None = None
     audit_client_id: UUID | None = None
+    # Set when the handler wrote its own, more specific audit event.
+    audited: bool = False
 
 
 @dataclass
@@ -324,7 +326,7 @@ def _store_idempotent(call: Call, result: Result) -> None:
 
 
 def _audit(call: Call, result: Result) -> None:
-    if result.status >= 400 or call.op.audit not in {"view", "export"}:
+    if result.status >= 400 or result.audited or call.op.audit not in {"view", "export"}:
         return
     if call.op.audit == "export":
         action = "download" if call.op.path.endswith("/download") else "export"

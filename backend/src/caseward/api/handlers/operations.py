@@ -2,7 +2,7 @@
 
 from caseward.api.framework import Call, Result
 from caseward.api.handlers import configuration as config
-from caseward.api.handlers import documents, extractions, letters, queue, reports, shared
+from caseward.api.handlers import admin, documents, extractions, letters, queue, reports, shared, tenants
 
 
 def create_case(call: Call) -> Result:
@@ -66,4 +66,17 @@ HANDLERS = {
     "createEventType": config.create_event_type,
     "listVulnerabilityFactorTypes": config.list_vulnerability_factor_types,
     "createVulnerabilityFactorType": config.create_vulnerability_factor_type,
+    "listClients": admin.list_clients,
+    "createClient": admin.create_client,
+    "listEngagements": admin.list_engagements,
+    "createEngagement": admin.create_engagement,
+    "endEngagement": admin.end_engagement,
+    "listUsers": admin.list_users,
+    "inviteUser": admin.invite_user,
+    "updateUser": admin.update_user,
+    "putMembership": admin.put_membership,
+    "deleteMembership": admin.delete_membership,
+    "listTenancies": tenants.list_tenancies,
+    "listVulnerabilities": tenants.list_vulnerabilities,
+    "createVulnerability": tenants.create_vulnerability,
 }

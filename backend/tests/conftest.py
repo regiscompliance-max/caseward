@@ -22,6 +22,7 @@ from caseward.deadlines import CALCULATOR_VERSION, DeadlineRule, compute_due_at
 ADMIN_DSN = os.environ.get("CASEWARD_TEST_ADMIN_DSN", "postgresql://postgres:postgres@localhost:5432/postgres")
 MIGRATIONS = Path(__file__).resolve().parents[1] / "db" / "migrations"
 PASSWORD = "caseward-test"
+OWNER = "cw_test_owner"
 LOGIN_ROLES = {
     "cw_test_app": ["caseward_app"],
     "cw_test_staff": ["caseward_app", "caseward_staff"],
@@ -37,8 +38,20 @@ def database():
     db_dsn = psycopg.conninfo.make_conninfo(ADMIN_DSN, dbname=name)
     try:
         with psycopg.connect(db_dsn, autocommit=True) as conn:
+            # Migrations run as a non-superuser owner, as in production. A
+            # superuser owner would bypass row-level security inside security
+            # definer functions and hide bugs that only show up in production.
+            if not conn.execute("select 1 from pg_roles where rolname = %s", [OWNER]).fetchone():
+                conn.execute(sql.SQL("create role {} login createrole password {}").format(
+                    sql.Identifier(OWNER), sql.Literal(PASSWORD)))
+            conn.execute(sql.SQL("grant create on database {} to {}").format(sql.Identifier(name), sql.Identifier(OWNER)))
+            for group in ("caseward_app", "caseward_staff", "caseward_worker"):
+                if conn.execute("select 1 from pg_roles where rolname = %s", [group]).fetchone():
+                    conn.execute(sql.SQL("grant {} to {} with admin option").format(sql.Identifier(group), sql.Identifier(OWNER)))
+        with psycopg.connect(db_dsn, user=OWNER, password=PASSWORD, autocommit=True) as owner:
             for migration in sorted(MIGRATIONS.glob("*.sql")):
-                conn.execute(migration.read_text())
+                owner.execute(migration.read_text())
+        with psycopg.connect(db_dsn, autocommit=True) as conn:
             for role, groups in LOGIN_ROLES.items():
                 exists = conn.execute("select 1 from pg_roles where rolname = %s", [role]).fetchone()
                 if not exists:
